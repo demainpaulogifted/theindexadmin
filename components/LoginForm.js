@@ -18,9 +18,9 @@ export default function LoginForm() {
     setError("")
     setLoading(true)
 
-    const { error: signInError } =
+    const { data, error: signInError } =
       await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       })
 
@@ -30,8 +30,25 @@ export default function LoginForm() {
       return
     }
 
+    if (!data?.session || !data?.user) {
+      setError("Login succeeded, but no authenticated session was created.")
+      setLoading(false)
+      return
+    }
+
+    // Confirm the browser can immediately see the authenticated user
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      setError("Authentication session could not be verified.")
+      setLoading(false)
+      return
+    }
+
     router.replace("/dashboard")
-    router.refresh()
   }
 
   return (
@@ -125,4 +142,4 @@ export default function LoginForm() {
       </form>
     </main>
   )
-        }
+}
