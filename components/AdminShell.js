@@ -26,18 +26,35 @@ export default function AdminShell({ children }) {
 
   const [admin, setAdmin] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [authError, setAuthError] = useState("")
 
   useEffect(() => {
+    let mounted = true
+
     async function loadAdmin() {
+      setLoading(true)
+      setAuthError("")
+
       const {
         data: { user },
         error: userError,
       } = await supabase.auth.getUser()
 
       if (userError || !user) {
-        router.replace("/login")
+        console.error("ADMIN SESSION ERROR:", userError)
+
+        if (mounted) {
+          setAuthError(
+            userError?.message ||
+              "No authenticated Supabase session was found."
+          )
+          setLoading(false)
+        }
+
         return
       }
+
+      console.log("AUTHENTICATED USER:", user.id)
 
       const { data, error } = await supabase
         .from("admin_users")
@@ -46,23 +63,51 @@ export default function AdminShell({ children }) {
         .eq("active", true)
         .maybeSingle()
 
-      if (error || !data) {
-        console.error("Admin authorization failed:", error)
-        await supabase.auth.signOut()
-        router.replace("/login")
+      if (error) {
+        console.error("ADMIN DATABASE ERROR:", error)
+
+        if (mounted) {
+          setAuthError(
+            `Admin database check failed: ${error.message}`
+          )
+          setLoading(false)
+        }
+
         return
       }
 
-      setAdmin({
-        ...data,
-        email: user.email,
-      })
+      if (!data) {
+        console.error(
+          "NO ACTIVE ADMIN RECORD FOUND FOR:",
+          user.id
+        )
 
-      setLoading(false)
+        if (mounted) {
+          setAuthError(
+            "Your Supabase account is authenticated, but no active admin record was found."
+          )
+          setLoading(false)
+        }
+
+        return
+      }
+
+      if (mounted) {
+        setAdmin({
+          ...data,
+          email: user.email,
+        })
+
+        setLoading(false)
+      }
     }
 
     loadAdmin()
-  }, [router])
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   async function handleLogout() {
     await supabase.auth.signOut()
@@ -80,6 +125,49 @@ export default function AdminShell({ children }) {
         }}
       >
         Loading Admin…
+      </main>
+    )
+  }
+
+  if (authError) {
+    return (
+      <main
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          placeItems: "center",
+          padding: "24px",
+        }}
+      >
+        <div
+          className="card"
+          style={{
+            width: "100%",
+            maxWidth: "600px",
+          }}
+        >
+          <h1 className="h1">
+            Admin authentication problem
+          </h1>
+
+          <p
+            style={{
+              marginTop: "16px",
+              color: "#900",
+              lineHeight: 1.6,
+            }}
+          >
+            {authError}
+          </p>
+
+          <button
+            className="btn"
+            style={{ marginTop: "20px" }}
+            onClick={() => router.replace("/login")}
+          >
+            Return to Login
+          </button>
+        </div>
       </main>
     )
   }
@@ -133,9 +221,7 @@ export default function AdminShell({ children }) {
       <section className="main">
         <header className="topbar">
           <div>
-            <strong>
-              {admin.email}
-            </strong>{" "}
+            <strong>{admin.email}</strong>{" "}
             <span className="badge">
               {admin.role}
             </span>
