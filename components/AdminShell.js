@@ -46,7 +46,7 @@ export default function AdminShell({ children }) {
         if (mounted) {
           setAuthError(
             userError?.message ||
-              "No authenticated Supabase session was found."
+              "Auth session missing. Please sign in again."
           )
           setLoading(false)
         }
@@ -60,7 +60,6 @@ export default function AdminShell({ children }) {
         .from("admin_users")
         .select("id,user_id,role,active")
         .eq("user_id", user.id)
-        .eq("active", true)
         .maybeSingle()
 
       if (error) {
@@ -78,13 +77,13 @@ export default function AdminShell({ children }) {
 
       if (!data) {
         console.error(
-          "NO ACTIVE ADMIN RECORD FOUND FOR:",
+          "NO ADMIN RECORD FOUND FOR USER:",
           user.id
         )
 
         if (mounted) {
           setAuthError(
-            "Your Supabase account is authenticated, but no active admin record was found."
+            `No admin record was found for authenticated user ${user.id}.`
           )
           setLoading(false)
         }
@@ -92,14 +91,30 @@ export default function AdminShell({ children }) {
         return
       }
 
-      if (mounted) {
-        setAdmin({
-          ...data,
-          email: user.email,
-        })
+      if (!data.active) {
+        console.error(
+          "ADMIN ACCOUNT IS INACTIVE:",
+          user.id
+        )
 
-        setLoading(false)
+        if (mounted) {
+          setAuthError(
+            "Your admin account exists but is currently inactive."
+          )
+          setLoading(false)
+        }
+
+        return
       }
+
+      if (!mounted) return
+
+      setAdmin({
+        ...data,
+        email: user.email,
+      })
+
+      setLoading(false)
     }
 
     loadAdmin()
@@ -143,7 +158,7 @@ export default function AdminShell({ children }) {
           className="card"
           style={{
             width: "100%",
-            maxWidth: "600px",
+            maxWidth: "650px",
           }}
         >
           <h1 className="h1">
@@ -155,6 +170,7 @@ export default function AdminShell({ children }) {
               marginTop: "16px",
               color: "#900",
               lineHeight: 1.6,
+              wordBreak: "break-word",
             }}
           >
             {authError}
@@ -241,4 +257,4 @@ export default function AdminShell({ children }) {
       </section>
     </div>
   )
-}
+            }
