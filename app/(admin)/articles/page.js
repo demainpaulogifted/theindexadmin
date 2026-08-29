@@ -12,9 +12,26 @@ function makeSlug(value) {
     .replace(/-+/g, "-")
 }
 
+const emptyForm = {
+  title: "",
+  slug: "",
+  excerpt: "",
+  content_html: "",
+  featured_image: "",
+  seo_title: "",
+  meta_description: "",
+  canonical_url: "",
+  no_index: false,
+  category_id: "",
+  status: "DRAFT",
+}
+
 export default function ArticlesPage() {
   const [articles, setArticles] = useState([])
   const [categories, setCategories] = useState([])
+  const [articleCategories, setArticleCategories] = useState({})
+  const [admin, setAdmin] = useState(null)
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState("")
@@ -23,60 +40,128 @@ export default function ArticlesPage() {
   const [editingId, setEditingId] = useState(null)
   const [showEditor, setShowEditor] = useState(false)
 
-  const [form, setForm] = useState({
-    title: "",
-    slug: "",
-    excerpt: "",
-    content_html: "",
-    featured_image: "",
-    seo_title: "",
-    meta_description: "",
-    canonical_url: "",
-    no_index: false,
-    category_id: "",
-    status: "DRAFT",
-  })
+  const [form, setForm] = useState(emptyForm)
+
+  const isSuperAdmin = admin?.role === "SUPER_ADMIN"
+
+  async function loadAdmin() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      throw new Error(
+        userError?.message || "Authentication session missing."
+      )
+    }
+
+    const { data, error } = await supabase
+      .from("admin_users")
+      .select("id,user_id,role,active")
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .maybeSingle()
+
+    if (error) {
+      throw new Error(
+        `Admin authorization failed: ${error.message}`
+      )
+    }
+
+    if (!data) {
+      throw new Error("No active admin record found.")
+    }
+
+    setAdmin({
+      ...data,
+      email: user.email,
+    })
+
+    return user
+  }
+
+  async function loadArticles() {
+    const { data, error } = await supabase
+      .from("posts")
+      .select(
+        "id,title,slug,excerpt,content_html,featured_image,status,published_at,scheduled_at,seo_title,meta_description,canonical_url,no_index,author_id,created_at,updated_at"
+      )
+      .order("updated_at", { ascending: false })
+
+    if (error) {
+      throw new Error(
+        `Could not load articles: ${error.message}`
+      )
+    }
+
+    setArticles(data || [])
+
+    const ids = (data || []).map((article) => article.id)
+
+    if (ids.length === 0) {
+      setArticleCategories({})
+      return
+    }
+
+    const {
+      data: relations,
+      error: relationError,
+    } = await supabase
+      .from("post_categories")
+      .select("post_id,category_id")
+      .in("post_id", ids)
+
+    if (relationError) {
+      throw new Error(
+        `Could not load article categories: ${relationError.message}`
+      )
+    }
+
+    const categoryLookup = {}
+
+    for (const relation of relations || []) {
+      categoryLookup[relation.post_id] =
+        relation.category_id
+    }
+
+    setArticleCategories(categoryLookup)
+  }
+
+  async function loadCategories() {
+    const { data, error } = await supabase
+      .from("categories")
+      .select("id,name,slug")
+      .order("name", { ascending: true })
+
+    if (error) {
+      throw new Error(
+        `Could not load categories: ${error.message}`
+      )
+    }
+
+    setCategories(data || [])
+  }
 
   async function loadData() {
     setLoading(true)
     setError("")
 
-    const [
-      { data: posts, error: postsError },
-      { data: categoryRows, error: categoryError },
-    ] = await Promise.all([
-      supabase
-        .from("posts")
-        .select(
-          "id,title,slug,excerpt,featured_image,status,published_at,scheduled_at,seo_title,meta_description,canonical_url,no_index,author_id,created_at,updated_at"
-        )
-        .order("updated_at", { ascending: false }),
+    try {
+      const currentAdmin = await loadAdmin()
 
-      supabase
-        .from("categories")
-        .select("id,name,slug")
-        .order("name", { ascending: true }),
-    ])
+      await Promise.all([
+        loadArticles(),
+        loadCategories(),
+      ])
 
-    if (postsError) {
-      console.error(postsError)
-      setError(`Could not load articles: ${postsError.message}`)
-    } else {
-      setArticles(posts || [])
+      setAdmin(currentAdmin)
+    } catch (err) {
+      console.error(err)
+      setError(err.message || "Could not load Articles.")
+    } finally {
+      setLoading(false)
     }
-
-    if (categoryError) {
-      console.error(categoryError)
-      setError((current) =>
-        current
-          ? `${current} Categories: ${categoryError.message}`
-          : `Could not load categories: ${categoryError.message}`
-      )
-    } else {
-      setCategories(categoryRows || [])
-    }
-
-    setLoading(false)
   }
 
   useEffect(() => {
@@ -94,19 +179,7 @@ export default function ArticlesPage() {
 
   function resetForm() {
     setEditingId(null)
-    setForm({
-      title: "",
-      slug: "",
-      excerpt: "",
-      content_html: "",
-      featured_image: "",
-      seo_title: "",
-      meta_description: "",
-      canonical_url: "",
-      no_index: false,
-      category_id: "",
-      status: "DRAFT",
-    })
+    setForm(emptyForm)
     setMessage("")
     setError("")
   }
@@ -117,7 +190,11 @@ export default function ArticlesPage() {
   }
 
   function editArticle(article) {
+    const categoryId =
+      articleCategories[article.id] || ""
+
     setEditingId(article.id)
+
     setForm({
       title: article.title || "",
       slug: article.slug || "",
@@ -128,12 +205,13 @@ export default function ArticlesPage() {
       meta_description: article.meta_description || "",
       canonical_url: article.canonical_url || "",
       no_index: article.no_index || false,
-      category_id: "",
+      category_id: categoryId,
       status: article.status || "DRAFT",
     })
-    setShowEditor(true)
+
     setMessage("")
     setError("")
+    setShowEditor(true)
   }
 
   function updateField(field, value) {
@@ -154,124 +232,182 @@ export default function ArticlesPage() {
     }))
   }
 
+  async function saveCategory(postId, categoryId) {
+    const { error: deleteError } = await supabase
+      .from("post_categories")
+      .delete()
+      .eq("post_id", postId)
+
+    if (deleteError) {
+      throw new Error(
+        `Could not update article category: ${deleteError.message}`
+      )
+    }
+
+    if (!categoryId) return
+
+    const { error: insertError } = await supabase
+      .from("post_categories")
+      .insert({
+        post_id: postId,
+        category_id: categoryId,
+      })
+
+    if (insertError) {
+      throw new Error(
+        `Could not save article category: ${insertError.message}`
+      )
+    }
+  }
+
   async function saveArticle(nextStatus = "DRAFT") {
+    if (!admin) {
+      setError("Admin account has not loaded.")
+      return
+    }
+
     setSaving(true)
     setMessage("")
     setError("")
 
-    const title = form.title.trim()
+    try {
+      const title = form.title.trim()
 
-    if (!title) {
-      setError("Article title is required.")
-      setSaving(false)
-      return
-    }
-
-    const slug =
-      form.slug.trim() || makeSlug(title)
-
-    if (!slug) {
-      setError("Please provide a valid article slug.")
-      setSaving(false)
-      return
-    }
-
-    const now = new Date().toISOString()
-
-    const payload = {
-      title,
-      slug,
-      excerpt: form.excerpt || null,
-      content_html: form.content_html || "",
-      featured_image: form.featured_image || null,
-      status: nextStatus,
-      published_at:
-        nextStatus === "PUBLISHED" ? now : null,
-      seo_title: form.seo_title || null,
-      meta_description:
-        form.meta_description || null,
-      canonical_url:
-        form.canonical_url || null,
-      no_index: form.no_index,
-      updated_at: now,
-    }
-
-    let result
-
-    if (editingId) {
-      result = await supabase
-        .from("posts")
-        .update(payload)
-        .eq("id", editingId)
-        .select()
-        .single()
-    } else {
-      const {
-        data: {
-          user,
-        },
-      } = await supabase.auth.getUser()
-
-      result = await supabase
-        .from("posts")
-        .insert({
-          ...payload,
-          author_id: user?.id || null,
-        })
-        .select()
-        .single()
-    }
-
-    if (result.error) {
-      console.error(result.error)
-      setError(
-        `Could not save article: ${result.error.message}`
-      )
-      setSaving(false)
-      return
-    }
-
-    if (form.category_id && result.data?.id) {
-      await supabase
-        .from("post_categories")
-        .delete()
-        .eq("post_id", result.data.id)
-
-      const {
-        error: categorySaveError,
-      } = await supabase
-        .from("post_categories")
-        .insert({
-          post_id: result.data.id,
-          category_id: form.category_id,
-        })
-
-      if (categorySaveError) {
-        console.error(categorySaveError)
-        setError(
-          `Article saved, but category could not be saved: ${categorySaveError.message}`
-        )
-        setSaving(false)
-        await loadData()
-        return
+      if (!title) {
+        throw new Error("Article title is required.")
       }
+
+      const slug =
+        form.slug.trim() || makeSlug(title)
+
+      if (!slug) {
+        throw new Error("Article slug is required.")
+      }
+
+      /*
+       * ARTICLE_USER:
+       * Can work with articles but cannot publish.
+       *
+       * SUPER_ADMIN:
+       * Can publish and fully manage articles.
+       */
+      if (
+        !isSuperAdmin &&
+        nextStatus === "PUBLISHED"
+      ) {
+        throw new Error(
+          "Only a SUPER_ADMIN can publish an article."
+        )
+      }
+
+      const now = new Date().toISOString()
+
+      const payload = {
+        title,
+        slug,
+        excerpt: form.excerpt || null,
+        content_html: form.content_html || "",
+        featured_image:
+          form.featured_image || null,
+        status: nextStatus,
+        published_at:
+          nextStatus === "PUBLISHED"
+            ? now
+            : null,
+        seo_title: form.seo_title || null,
+        meta_description:
+          form.meta_description || null,
+        canonical_url:
+          form.canonical_url || null,
+        no_index: form.no_index,
+        updated_at: now,
+      }
+
+      let savedArticle
+
+      if (editingId) {
+        const {
+          data,
+          error: updateError,
+        } = await supabase
+          .from("posts")
+          .update(payload)
+          .eq("id", editingId)
+          .select()
+          .single()
+
+        if (updateError) {
+          throw new Error(
+            `Could not update article: ${updateError.message}`
+          )
+        }
+
+        savedArticle = data
+      } else {
+        const {
+          data: {
+            user,
+          },
+        } = await supabase.auth.getUser()
+
+        const {
+          data,
+          error: insertError,
+        } = await supabase
+          .from("posts")
+          .insert({
+            ...payload,
+            author_id: user?.id || null,
+          })
+          .select()
+          .single()
+
+        if (insertError) {
+          throw new Error(
+            `Could not create article: ${insertError.message}`
+          )
+        }
+
+        savedArticle = data
+      }
+
+      if (savedArticle?.id) {
+        await saveCategory(
+          savedArticle.id,
+          form.category_id
+        )
+      }
+
+      setMessage(
+        nextStatus === "PUBLISHED"
+          ? "Article published successfully."
+          : "Article saved successfully."
+      )
+
+      setShowEditor(false)
+      resetForm()
+
+      await loadArticles()
+    } catch (err) {
+      console.error(err)
+      setError(
+        err.message || "Could not save article."
+      )
+    } finally {
+      setSaving(false)
     }
-
-    setMessage(
-      nextStatus === "PUBLISHED"
-        ? "Article published successfully."
-        : "Article saved as draft."
-    )
-
-    setSaving(false)
-    setShowEditor(false)
-    resetForm()
-    await loadData()
   }
 
   async function deleteArticle(id) {
+    if (!isSuperAdmin) {
+      setError(
+        "Only a SUPER_ADMIN can delete articles."
+      )
+      return
+    }
+
     const confirmed = window.confirm(
-      "Delete this article? This cannot be undone."
+      "Delete this article permanently?"
     )
 
     if (!confirmed) return
@@ -279,32 +415,55 @@ export default function ArticlesPage() {
     setError("")
     setMessage("")
 
-    const { error: categoryError } = await supabase
-      .from("post_categories")
-      .delete()
-      .eq("post_id", id)
+    try {
+      const {
+        error: categoryError,
+      } = await supabase
+        .from("post_categories")
+        .delete()
+        .eq("post_id", id)
 
-    if (categoryError) {
+      if (categoryError) {
+        throw new Error(
+          `Could not remove article category: ${categoryError.message}`
+        )
+      }
+
+      const { error: postError } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", id)
+
+      if (postError) {
+        throw new Error(
+          `Could not delete article: ${postError.message}`
+        )
+      }
+
+      setMessage("Article deleted.")
+      await loadArticles()
+    } catch (err) {
+      console.error(err)
       setError(
-        `Could not remove article category: ${categoryError.message}`
+        err.message || "Could not delete article."
       )
-      return
     }
+  }
 
-    const { error: postError } = await supabase
-      .from("posts")
-      .delete()
-      .eq("id", id)
-
-    if (postError) {
-      setError(
-        `Could not delete article: ${postError.message}`
-      )
-      return
-    }
-
-    setMessage("Article deleted.")
-    await loadData()
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: "60vh",
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <div>
+          <p>Loading Articles…</p>
+        </div>
+      </main>
+    )
   }
 
   if (showEditor) {
@@ -319,8 +478,7 @@ export default function ArticlesPage() {
             </h1>
 
             <p className="muted">
-              Create and manage THE INDEX editorial
-              content.
+              Signed in as {admin?.email}
             </p>
           </div>
 
@@ -331,12 +489,15 @@ export default function ArticlesPage() {
               resetForm()
             }}
           >
-            Back to Articles
+            Back
           </button>
         </div>
 
         {message && (
-          <div className="card" style={{ marginTop: "18px" }}>
+          <div
+            className="card"
+            style={{ marginTop: "18px" }}
+          >
             {message}
           </div>
         )}
@@ -369,7 +530,9 @@ export default function ArticlesPage() {
               className="input"
               value={form.title}
               onChange={(event) =>
-                handleTitleChange(event.target.value)
+                handleTitleChange(
+                  event.target.value
+                )
               }
               placeholder="Article title"
             />
@@ -408,12 +571,12 @@ export default function ArticlesPage() {
             />
 
             <label style={{ marginTop: "16px" }}>
-              Article content
+              Article Content
             </label>
 
             <textarea
               className="input"
-              rows="18"
+              rows="20"
               value={form.content_html}
               onChange={(event) =>
                 updateField(
@@ -421,11 +584,11 @@ export default function ArticlesPage() {
                   event.target.value
                 )
               }
-              placeholder="Write the article content here. HTML is supported by the existing content_html field."
+              placeholder="Write your article here. HTML is supported."
             />
 
             <label style={{ marginTop: "16px" }}>
-              Featured image URL
+              Featured Image URL
             </label>
 
             <input
@@ -446,7 +609,15 @@ export default function ArticlesPage() {
               Publishing
             </h2>
 
-            <label style={{ marginTop: "16px" }}>
+            <p
+              className="muted"
+              style={{ marginTop: "8px" }}
+            >
+              Role:{" "}
+              <strong>{admin?.role}</strong>
+            </p>
+
+            <label style={{ marginTop: "18px" }}>
               Category
             </label>
 
@@ -474,37 +645,53 @@ export default function ArticlesPage() {
               ))}
             </select>
 
-            <div
+            <button
+              className="btn"
               style={{
-                marginTop: "24px",
-                display: "grid",
-                gap: "10px",
+                marginTop: "20px",
+                width: "100%",
               }}
+              disabled={saving}
+              onClick={() =>
+                saveArticle("DRAFT")
+              }
             >
-              <button
-                className="btn"
-                disabled={saving}
-                onClick={() =>
-                  saveArticle("DRAFT")
-                }
-              >
-                {saving
-                  ? "Saving..."
-                  : "Save Draft"}
-              </button>
+              {saving
+                ? "Saving..."
+                : "Save Draft"}
+            </button>
 
+            {isSuperAdmin && (
               <button
                 className="btn primary"
+                style={{
+                  marginTop: "10px",
+                  width: "100%",
+                }}
                 disabled={saving}
                 onClick={() =>
                   saveArticle("PUBLISHED")
                 }
               >
                 {saving
-                  ? "Saving..."
+                  ? "Publishing..."
                   : "Publish Article"}
               </button>
-            </div>
+            )}
+
+            {!isSuperAdmin && (
+              <p
+                className="muted"
+                style={{
+                  marginTop: "12px",
+                  fontSize: "13px",
+                }}
+              >
+                Articles submitted by contributors
+                must be reviewed by a SUPER_ADMIN
+                before publication.
+              </p>
+            )}
 
             <h2
               className="h2"
@@ -514,7 +701,7 @@ export default function ArticlesPage() {
             </h2>
 
             <label style={{ marginTop: "12px" }}>
-              SEO title
+              SEO Title
             </label>
 
             <input
@@ -529,7 +716,7 @@ export default function ArticlesPage() {
             />
 
             <label style={{ marginTop: "12px" }}>
-              Meta description
+              Meta Description
             </label>
 
             <textarea
@@ -579,7 +766,7 @@ export default function ArticlesPage() {
                 }
               />
 
-              Hide this article from search engines
+              Hide from search engines
             </label>
           </aside>
         </div>
@@ -609,7 +796,10 @@ export default function ArticlesPage() {
       </div>
 
       {message && (
-        <div className="card" style={{ marginTop: "18px" }}>
+        <div
+          className="card"
+          style={{ marginTop: "18px" }}
+        >
           {message}
         </div>
       )}
@@ -630,11 +820,7 @@ export default function ArticlesPage() {
         className="card"
         style={{ marginTop: "18px" }}
       >
-        {loading ? (
-          <p className="muted">
-            Loading articles…
-          </p>
-        ) : articles.length === 0 ? (
+        {articles.length === 0 ? (
           <div>
             <h2 className="h2">
               No articles yet
@@ -653,11 +839,7 @@ export default function ArticlesPage() {
             </button>
           </div>
         ) : (
-          <div
-            style={{
-              overflowX: "auto",
-            }}
-          >
+          <div style={{ overflowX: "auto" }}>
             <table
               style={{
                 width: "100%",
@@ -696,65 +878,4 @@ export default function ArticlesPage() {
                         padding: "14px 8px",
                       }}
                     >
-                      {categoryMap[
-                        article.category_id
-                      ] || "—"}
-                    </td>
-
-                    <td
-                      style={{
-                        padding: "14px 8px",
-                      }}
-                    >
-                      {article.status || "DRAFT"}
-                    </td>
-
-                    <td
-                      style={{
-                        padding: "14px 8px",
-                      }}
-                    >
-                      {article.updated_at
-                        ? new Date(
-                            article.updated_at
-                          ).toLocaleDateString()
-                        : "—"}
-                    </td>
-
-                    <td
-                      style={{
-                        padding: "14px 8px",
-                        textAlign: "right",
-                      }}
-                    >
-                      <button
-                        className="btn"
-                        onClick={() =>
-                          editArticle(article)
-                        }
-                      >
-                        Edit
-                      </button>
-
-                      <button
-                        className="btn"
-                        style={{
-                          marginLeft: "8px",
-                        }}
-                        onClick={() =>
-                          deleteArticle(article.id)
-                        }
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </main>
-  )
-      }
+  
