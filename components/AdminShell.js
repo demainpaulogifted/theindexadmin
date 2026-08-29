@@ -31,29 +31,33 @@ export default function AdminShell({ children }) {
     async function loadAdmin() {
       const {
         data: { user },
+        error: userError,
       } = await supabase.auth.getUser()
 
-      if (!user) {
+      if (userError || !user) {
         router.replace("/login")
         return
       }
 
       const { data, error } = await supabase
         .from("admin_users")
-        .select(
-          "id,user_id,role,name,email,active"
-        )
+        .select("id,user_id,role,active")
         .eq("user_id", user.id)
         .eq("active", true)
         .maybeSingle()
 
       if (error || !data) {
+        console.error("Admin authorization failed:", error)
         await supabase.auth.signOut()
         router.replace("/login")
         return
       }
 
-      setAdmin(data)
+      setAdmin({
+        ...data,
+        email: user.email,
+      })
+
       setLoading(false)
     }
 
@@ -130,7 +134,7 @@ export default function AdminShell({ children }) {
         <header className="topbar">
           <div>
             <strong>
-              {admin.name || admin.email}
+              {admin.email}
             </strong>{" "}
             <span className="badge">
               {admin.role}
@@ -151,4 +155,4 @@ export default function AdminShell({ children }) {
       </section>
     </div>
   )
-          }
+}
