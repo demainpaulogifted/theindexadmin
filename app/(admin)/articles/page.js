@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import ArticleEditor from "@/components/admin/ArticleEditor"
 
 const EMPTY_FORM = {
   title: "",
