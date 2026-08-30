@@ -1,196 +1,6 @@
-"use client"
-
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { supabase } from "@/lib/supabase"
-
-const EMPTY_FORM = {
-  title: "",
-  slug: "",
-  content_html: "",
-  meta_description: "",
-  published: false,
-  no_index: false,
-  sort_order: 0,
-}
-
-function makeSlug(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-}
-
-export default function PagesPage() {
-  const router = useRouter()
-
-  const [pages, setPages] = useState([])
-  const [admin, setAdmin] = useState(null)
-
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [editingId, setEditingId] = useState(null)
-
-  const [showEditor, setShowEditor] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-
-  const [message, setMessage] = useState("")
-  const [error, setError] = useState("")
-
-  const isSuperAdmin =
-    admin?.role === "SUPER_ADMIN"
-
-  async function loadAdmin() {
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
-
-    if (userError || !user) {
-      throw new Error(
-        userError?.message ||
-          "Authentication session missing."
-      )
-    }
-
-    const {
-      data,
-      error: adminError,
-    } = await supabase
-      .from("admin_users")
-      .select(
-        "id,user_id,role,active"
-      )
-      .eq("user_id", user.id)
-      .eq("active", true)
-      .maybeSingle()
-
-    if (adminError) {
-      throw new Error(
-        `Admin authorization failed: ${adminError.message}`
-      )
-    }
-
-    if (!data) {
-      throw new Error(
-        "No active admin record found."
-      )
-    }
-
-    const currentAdmin = {
-      ...data,
-      email: user.email,
-    }
-
-    setAdmin(currentAdmin)
-
-    return currentAdmin
-  }
-
-  async function loadPages() {
-    const {
-      data,
-      error: pagesError,
-    } = await supabase
-      .from("pages")
-      .select(
-        "id,title,slug,content_html,meta_description,published,no_index,sort_order,created_at,updated_at"
-      )
-      .order("sort_order", {
-        ascending: true,
-      })
-      .order("title", {
-        ascending: true,
-      })
-
-    if (pagesError) {
-      throw new Error(
-        `Could not load pages: ${pagesError.message}`
-      )
-    }
-
-    setPages(data || [])
-  }
-
-  async function loadData() {
-    setLoading(true)
-    setError("")
-
-    try {
-      await loadAdmin()
-      await loadPages()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err?.message ||
-          "Could not load Pages."
-      )
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  function updateField(field, value) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }))
-  }
-
-  function resetEditor() {
-    setEditingId(null)
-    setForm({
-      ...EMPTY_FORM,
-    })
-  }
-
-  function closeEditor() {
-    setShowEditor(false)
-    resetEditor()
-  }
-
-  function openNewPage() {
-    resetEditor()
-    setMessage("")
-    setError("")
-    setShowEditor(true)
-  }
-
-  function editPage(page) {
-    setEditingId(page.id)
-
-    setForm({
-      title: page.title || "",
-      slug: page.slug || "",
-      content_html:
-        page.content_html || "",
-      meta_description:
-        page.meta_description || "",
-      published:
-        Boolean(page.published),
-      no_index:
-        Boolean(page.no_index),
-      sort_order:
-        Number(page.sort_order || 0),
-    })
-
-    setMessage("")
-    setError("")
-    setShowEditor(true)
-  }
-
-  async function savePage() {
+async function savePage() {
     if (!admin) {
-      setError(
-        "Admin account has not loaded."
-      )
+      setError("Admin account has not loaded.")
       return
     }
 
@@ -199,8 +9,7 @@ export default function PagesPage() {
     setError("")
 
     try {
-      const title =
-        form.title.trim()
+      const title = form.title.trim()
 
       const slug =
         form.slug.trim() ||
@@ -218,13 +27,21 @@ export default function PagesPage() {
         )
       }
 
-      const now =
-        new Date().toISOString()
-
-      const published =
-        isSuperAdmin
-          ? Boolean(form.published)
-          : false
+      /*
+       * IMPORTANT:
+       * When editing, editingId MUST be a real UUID.
+       * Never allow null, undefined or the string "null"
+       * to reach Supabase.
+       */
+      if (
+        editingId &&
+        (editingId === "null" ||
+          editingId === "undefined")
+      ) {
+        throw new Error(
+          "This page has an invalid ID. Refresh the Pages list and try again."
+        )
+      }
 
       const payload = {
         title,
@@ -234,17 +51,24 @@ export default function PagesPage() {
         meta_description:
           form.meta_description.trim() ||
           null,
-        published,
+        published:
+          isSuperAdmin
+            ? Boolean(form.published)
+            : false,
         no_index:
           Boolean(form.no_index),
         sort_order:
           Number(form.sort_order) || 0,
-        updated_at: now,
+        updated_at:
+          new Date().toISOString(),
       }
 
-      let saved
+      let saved = null
 
       if (editingId) {
+        /*
+         * UPDATE EXISTING PAGE
+         */
         const {
           data,
           error: updateError,
@@ -255,7 +79,7 @@ export default function PagesPage() {
           .select(
             "id,title,slug,content_html,meta_description,published,no_index,sort_order,created_at,updated_at"
           )
-          .single()
+          .maybeSingle()
 
         if (updateError) {
           throw new Error(
@@ -263,8 +87,20 @@ export default function PagesPage() {
           )
         }
 
+        if (!data) {
+          throw new Error(
+            "The page could not be found for updating. Refresh the Pages list and try again."
+          )
+        }
+
         saved = data
       } else {
+        /*
+         * CREATE NEW PAGE
+         *
+         * Do NOT manually supply id.
+         * Let Supabase/PostgreSQL generate the UUID.
+         */
         const {
           data,
           error: insertError,
@@ -285,9 +121,9 @@ export default function PagesPage() {
         saved = data
       }
 
-      if (!saved) {
+      if (!saved?.id) {
         throw new Error(
-          "Page could not be saved."
+          "Page was saved but the database did not return a valid page ID."
         )
       }
 
@@ -297,10 +133,16 @@ export default function PagesPage() {
           : "Page created successfully."
       )
 
-      closeEditor()
+      setShowEditor(false)
+      resetEditor()
 
       await loadPages()
 
+      /*
+       * Refresh the Next.js router so any
+       * server-rendered public content can
+       * pick up the new database data.
+       */
       router.refresh()
     } catch (err) {
       console.error(
@@ -325,13 +167,35 @@ export default function PagesPage() {
       return
     }
 
+    /*
+     * Never send null or the string "null"
+     * to a UUID column.
+     */
+    if (
+      !id ||
+      id === "null" ||
+      id === "undefined"
+    ) {
+      setError(
+        "This page has an invalid ID and cannot be deleted. Refresh the Pages list."
+      )
+      return
+    }
+
     const page = pages.find(
       (item) => item.id === id
     )
 
+    if (!page) {
+      setError(
+        "Page not found. Refresh the Pages list and try again."
+      )
+      return
+    }
+
     if (
       !window.confirm(
-        `Delete "${page?.title || "this page"}" permanently?`
+        `Delete "${page.title || "this page"}" permanently?`
       )
     ) {
       return
@@ -342,15 +206,23 @@ export default function PagesPage() {
 
     try {
       const {
+        data: deletedRows,
         error: deleteError,
       } = await supabase
         .from("pages")
         .delete()
         .eq("id", id)
+        .select("id")
 
       if (deleteError) {
         throw new Error(
           `Could not delete page: ${deleteError.message}`
+        )
+      }
+
+      if (!deletedRows?.length) {
+        throw new Error(
+          "The page was not deleted. It may no longer exist or you may not have permission to delete it."
         )
       }
 
@@ -359,8 +231,13 @@ export default function PagesPage() {
       )
 
       await loadPages()
+
+      router.refresh()
     } catch (err) {
-      console.error(err)
+      console.error(
+        "PAGE DELETE ERROR:",
+        err
+      )
 
       setError(
         err?.message ||
@@ -377,21 +254,37 @@ export default function PagesPage() {
       return
     }
 
+    if (
+      !page?.id ||
+      page.id === "null" ||
+      page.id === "undefined"
+    ) {
+      setError(
+        "This page has an invalid ID. Refresh the Pages list and try again."
+      )
+      return
+    }
+
     setError("")
     setMessage("")
 
     try {
       const {
+        data,
         error: updateError,
       } = await supabase
         .from("pages")
         .update({
           published:
-            !page.published,
+            !Boolean(page.published),
           updated_at:
             new Date().toISOString(),
         })
         .eq("id", page.id)
+        .select(
+          "id,published"
+        )
+        .maybeSingle()
 
       if (updateError) {
         throw new Error(
@@ -399,15 +292,26 @@ export default function PagesPage() {
         )
       }
 
+      if (!data) {
+        throw new Error(
+          "The page could not be found."
+        )
+      }
+
       setMessage(
-        page.published
-          ? "Page unpublished."
-          : "Page published."
+        data.published
+          ? "Page published."
+          : "Page unpublished."
       )
 
       await loadPages()
+
+      router.refresh()
     } catch (err) {
-      console.error(err)
+      console.error(
+        "PAGE STATUS ERROR:",
+        err
+      )
 
       setError(
         err?.message ||
@@ -415,8 +319,7 @@ export default function PagesPage() {
       )
     }
   }
-
-  if (loading) {
+if (loading) {
     return (
       <main
         style={{
@@ -488,8 +391,7 @@ export default function PagesPage() {
           <section
             className="card"
             style={{
-              gridColumn:
-                "span 2",
+              gridColumn: "span 2",
             }}
           >
             <label>
@@ -740,7 +642,8 @@ export default function PagesPage() {
       </main>
     )
   }
-return (
+
+  return (
     <main>
       <div className="row spread">
         <div>
@@ -799,9 +702,9 @@ return (
             </h2>
 
             <p className="muted">
-              Create your first
-              website page using
-              the button above.
+              Create your first website
+              page using the button
+              above.
             </p>
           </div>
         ) : (
@@ -811,66 +714,59 @@ return (
               gap: "14px",
             }}
           >
-            {pages.map((page) => (
-              <article
-                key={page.id}
-                style={{
-                  border:
-                    "1px solid #e5e5e5",
-                  borderRadius:
-                    "14px",
-                  padding: "16px",
-                }}
-              >
-                <div className="row spread">
-                  <div
-                    style={{
-                      minWidth: 0,
-                    }}
-                  >
-                    <h2
-                      className="h2"
-                      style={{
-                        margin: 0,
-                      }}
-                    >
-                      {page.title}
-                    </h2>
+            {pages.map((page) => {
+              const validId =
+                Boolean(page?.id) &&
+                page.id !== "null" &&
+                page.id !== "undefined"
 
-                    <p
-                      className="muted"
-                      style={{
-                        marginTop: "6px",
-                      }}
-                    >
-                      /{page.slug}
-                    </p>
-
+              return (
+                <article
+                  key={
+                    validId
+                      ? page.id
+                      : `invalid-${page.slug || page.title || Math.random()}`
+                  }
+                  style={{
+                    border:
+                      "1px solid #e5e5e5",
+                    borderRadius:
+                      "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <div className="row spread">
                     <div
                       style={{
-                        display: "flex",
-                        flexWrap: "wrap",
-                        gap: "6px",
-                        marginTop: "10px",
+                        minWidth: 0,
                       }}
                     >
-                      <span
+                      <h2
+                        className="h2"
                         style={{
-                          border:
-                            "1px solid #ddd",
-                          borderRadius:
-                            "999px",
-                          padding:
-                            "4px 9px",
-                          fontSize: "12px",
+                          margin: 0,
                         }}
                       >
-                        {page.published
-                          ? "PUBLISHED"
-                          : "DRAFT"}
-                      </span>
+                        {page.title}
+                      </h2>
 
-                      {page.no_index && (
+                      <p
+                        className="muted"
+                        style={{
+                          marginTop: "6px",
+                        }}
+                      >
+                        /{page.slug}
+                      </p>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "6px",
+                          marginTop: "10px",
+                        }}
+                      >
                         <span
                           style={{
                             border:
@@ -879,82 +775,146 @@ return (
                               "999px",
                             padding:
                               "4px 9px",
-                            fontSize: "12px",
+                            fontSize:
+                              "12px",
                           }}
                         >
-                          NO INDEX
+                          {page.published
+                            ? "PUBLISHED"
+                            : "DRAFT"}
                         </span>
-                      )}
 
-                      <span
-                        style={{
-                          border:
-                            "1px solid #ddd",
-                          borderRadius:
-                            "999px",
-                          padding:
-                            "4px 9px",
-                          fontSize: "12px",
+                        {page.no_index && (
+                          <span
+                            style={{
+                              border:
+                                "1px solid #ddd",
+                              borderRadius:
+                                "999px",
+                              padding:
+                                "4px 9px",
+                              fontSize:
+                                "12px",
+                            }}
+                          >
+                            NO INDEX
+                          </span>
+                        )}
+
+                        <span
+                          style={{
+                            border:
+                              "1px solid #ddd",
+                            borderRadius:
+                              "999px",
+                            padding:
+                              "4px 9px",
+                            fontSize:
+                              "12px",
+                          }}
+                        >
+                          Order:{" "}
+                          {page.sort_order}
+                        </span>
+
+                        {!validId && (
+                          <span
+                            style={{
+                              border:
+                                "1px solid #b00020",
+                              color:
+                                "#b00020",
+                              borderRadius:
+                                "999px",
+                              padding:
+                                "4px 9px",
+                              fontSize:
+                                "12px",
+                            }}
+                          >
+                            INVALID ID
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        justifyContent:
+                          "flex-end",
+                      }}
+                    >
+                      <button
+                        type="button"
+                        className="btn"
+                        disabled={!validId}
+                        onClick={() => {
+                          if (!validId) {
+                            setError(
+                              "This page has an invalid ID and cannot be edited. Refresh the Pages list."
+                            )
+                            return
+                          }
+
+                          editPage(page)
                         }}
                       >
-                        Order:{" "}
-                        {page.sort_order}
-                      </span>
+                        Edit
+                      </button>
+
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={!validId}
+                          onClick={() => {
+                            if (!validId) {
+                              setError(
+                                "This page has an invalid ID and cannot be published."
+                              )
+                              return
+                            }
+
+                            togglePublished(
+                              page
+                            )
+                          }}
+                        >
+                          {page.published
+                            ? "Unpublish"
+                            : "Publish"}
+                        </button>
+                      )}
+
+                      {isSuperAdmin && (
+                        <button
+                          type="button"
+                          className="btn"
+                          disabled={!validId}
+                          onClick={() => {
+                            if (!validId) {
+                              setError(
+                                "This page has an invalid ID and cannot be deleted."
+                              )
+                              return
+                            }
+
+                            deletePage(
+                              page.id
+                            )
+                          }}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      flexWrap: "wrap",
-                      justifyContent:
-                        "flex-end",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() =>
-                        editPage(page)
-                      }
-                    >
-                      Edit
-                    </button>
-
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() =>
-                          togglePublished(
-                            page
-                          )
-                        }
-                      >
-                        {page.published
-                          ? "Unpublish"
-                          : "Publish"}
-                      </button>
-                    )}
-
-                    {isSuperAdmin && (
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() =>
-                          deletePage(
-                            page.id
-                          )
-                        }
-                      >
-                        Delete
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </article>
-            ))}
+                </article>
+              )
+            })}
           </div>
         )}
       </div>
