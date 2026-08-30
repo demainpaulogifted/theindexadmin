@@ -77,7 +77,7 @@ export default function SettingsPage() {
       } = await supabase
         .from("site_settings")
         .select(
-          "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image"
+          "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
         )
         .limit(1)
         .maybeSingle()
@@ -92,28 +92,37 @@ export default function SettingsPage() {
         setForm({
           site_name:
             data.site_name || "THE INDEX",
+
           tagline:
             data.tagline ||
             "Meaningful content. Ideas that matter.",
+
           blog_description:
             data.blog_description || "",
+
           meta_description:
             data.meta_description || "",
+
           default_seo_title:
             data.default_seo_title || "",
+
           site_url:
             data.site_url ||
             "https://theindexpublic.vercel.app",
+
           logo_url:
             data.logo_url || "",
+
           favicon_url:
             data.favicon_url || "",
-          social_image:
-            data.social_image || "",
+
+          social_image_url:
+            data.social_image_url || "",
         })
       }
     } catch (err) {
       console.error(err)
+
       setError(
         err.message ||
           "Could not load Settings."
@@ -131,7 +140,12 @@ export default function SettingsPage() {
   }
 
   async function saveSettings() {
-    if (!admin) return
+    if (!admin) {
+      setError(
+        "Admin account has not loaded."
+      )
+      return
+    }
 
     if (admin.role !== "SUPER_ADMIN") {
       setError(
@@ -195,8 +209,8 @@ export default function SettingsPage() {
           form.favicon_url.trim() ||
           null,
 
-        social_image:
-          form.social_image.trim() ||
+        social_image_url:
+          form.social_image_url.trim() ||
           null,
       }
 
@@ -232,6 +246,7 @@ export default function SettingsPage() {
       )
     } catch (err) {
       console.error(err)
+
       setError(
         err.message ||
           "Could not save Settings."
@@ -362,9 +377,7 @@ export default function SettingsPage() {
           </strong>
 
           <textarea
-            value={
-              form.blog_description
-            }
+            value={form.blog_description}
             onChange={(event) =>
               updateField(
                 "blog_description",
@@ -410,9 +423,7 @@ export default function SettingsPage() {
               opacity: 0.65,
             }}
           >
-            Current public site:
-            {" "}
-            https://theindexpublic.vercel.app
+            Use the public website domain here.
           </small>
         </label>
       </section>
@@ -438,9 +449,7 @@ export default function SettingsPage() {
           </strong>
 
           <input
-            value={
-              form.default_seo_title
-            }
+            value={form.default_seo_title}
             onChange={(event) =>
               updateField(
                 "default_seo_title",
@@ -465,9 +474,7 @@ export default function SettingsPage() {
           </strong>
 
           <textarea
-            value={
-              form.meta_description
-            }
+            value={form.meta_description}
             onChange={(event) =>
               updateField(
                 "meta_description",
@@ -552,10 +559,10 @@ export default function SettingsPage() {
           </strong>
 
           <input
-            value={form.social_image}
+            value={form.social_image_url}
             onChange={(event) =>
               updateField(
-                "social_image",
+                "social_image_url",
                 event.target.value
               )
             }
