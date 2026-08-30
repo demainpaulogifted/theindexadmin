@@ -15,7 +15,7 @@ const EMPTY_FORM = {
 }
 
 function makeSlug(value) {
-  return value
+  return String(value || "")
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9\s-]/g, "")
@@ -24,11 +24,35 @@ function makeSlug(value) {
 }
 
 function isValidId(id) {
-  return Boolean(
-    id &&
-      id !== "null" &&
-      id !== "undefined"
+  if (!id) return false
+
+  const value = String(id).trim()
+
+  if (
+    value === "" ||
+    value === "null" ||
+    value === "undefined"
+  ) {
+    return false
+  }
+
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
   )
+}
+
+function getSupabaseErrorMessage(error) {
+  if (!error) return "Unknown database error."
+
+  if (error.code === "23505") {
+    return "A page with this slug already exists. Please choose a different slug."
+  }
+
+  if (error.code === "42501") {
+    return "You do not have permission to perform this action."
+  }
+
+  return error.message || "Database request failed."
 }
 
 export default function PagesPage() {
@@ -71,16 +95,16 @@ export default function PagesPage() {
       error: adminError,
     } = await supabase
       .from("admin_users")
-      .select(
-        "id,user_id,role,active"
-      )
+      .select("id,user_id,role,active")
       .eq("user_id", user.id)
       .eq("active", true)
       .maybeSingle()
 
     if (adminError) {
       throw new Error(
-        `Admin authorization failed: ${adminError.message}`
+        `Admin authorization failed: ${getSupabaseErrorMessage(
+          adminError
+        )}`
       )
     }
 
@@ -118,11 +142,17 @@ export default function PagesPage() {
 
     if (pagesError) {
       throw new Error(
-        `Could not load pages: ${pagesError.message}`
+        `Could not load pages: ${getSupabaseErrorMessage(
+          pagesError
+        )}`
       )
     }
 
-    setPages(data || [])
+    const validPages = (data || []).filter(
+      (page) => isValidId(page?.id)
+    )
+
+    setPages(validPages)
   }
 
   async function loadData() {
@@ -183,12 +213,12 @@ export default function PagesPage() {
   function editPage(page) {
     if (!isValidId(page?.id)) {
       setError(
-        "This page has an invalid ID. Refresh the Pages list and try again."
+        "This page has an invalid database ID. Refresh the Pages list and try again."
       )
       return
     }
 
-    setEditingId(page.id)
+    setEditingId(String(page.id))
 
     setForm({
       title: page.title || "",
@@ -224,10 +254,10 @@ export default function PagesPage() {
 
     try {
       const title =
-        form.title.trim()
+        String(form.title || "").trim()
 
       const slug =
-        form.slug.trim() ||
+        String(form.slug || "").trim() ||
         makeSlug(title)
 
       if (!title) {
@@ -242,8 +272,11 @@ export default function PagesPage() {
         )
       }
 
+      const isEditing =
+        Boolean(editingId)
+
       if (
-        editingId &&
+        isEditing &&
         !isValidId(editingId)
       ) {
         throw new Error(
@@ -257,11 +290,9 @@ export default function PagesPage() {
         content_html:
           form.content_html || "",
         meta_description:
-          form.meta_description.trim() ||
-          null,
-        published: isSuperAdmin
-          ? Boolean(form.published)
-          : false,
+          String(
+            form.meta_description || ""
+          ).trim() || null,
         no_index:
           Boolean(form.no_index),
         sort_order:
@@ -270,9 +301,25 @@ export default function PagesPage() {
           new Date().toISOString(),
       }
 
+      /*
+       * ARTICLE_USER pages cannot publish.
+       * SUPER_ADMIN can choose published/draft.
+       */
+      if (isSuperAdmin) {
+        payload.published =
+          Boolean(form.published)
+      } else {
+        payload.published = false
+      }
+
       let saved = null
 
-      if (editingId) {
+      if (isEditing) {
+        /*
+         * IMPORTANT:
+         * When editing, we ONLY update the existing
+         * UUID. We NEVER insert a new row.
+         */
         const {
           data,
           error: updateError,
@@ -287,18 +334,27 @@ export default function PagesPage() {
 
         if (updateError) {
           throw new Error(
-            `Could not update page: ${updateError.message}`
+            `Could not update page: ${getSupabaseErrorMessage(
+              updateError
+            )}`
           )
         }
 
-        if (!data) {
+        if (!data || !isValidId(data.id)) {
           throw new Error(
-            "The page could not be found for updating. Refresh the Pages list and try again."
+            "The existing page could not be updated. Refresh the Pages list and try again."
           )
         }
 
         saved = data
       } else {
+        /*
+         * For a NEW page we deliberately do NOT
+         * provide an id.
+         *
+         * PostgreSQL now generates the UUID through
+         * the pages.id DEFAULT.
+         */
         const {
           data,
           error: insertError,
@@ -312,24 +368,23 @@ export default function PagesPage() {
 
         if (insertError) {
           throw new Error(
-            `Could not create page: ${insertError.message}`
+            `Could not create page: ${getSupabaseErrorMessage(
+              insertError
+            )}`
+          )
+        }
+
+        if (!data || !isValidId(data.id)) {
+          throw new Error(
+            "The page was created but no valid database ID was returned."
           )
         }
 
         saved = data
       }
 
-      if (!saved?.id) {
-        throw new Error(
-          "Page was saved but the database did not return a valid page ID."
-        )
-      }
-
-      const wasEditing =
-        Boolean(editingId)
-
       setMessage(
-        wasEditing
+        isEditing
           ? "Page updated successfully."
           : "Page created successfully."
       )
@@ -365,13 +420,14 @@ export default function PagesPage() {
 
     if (!isValidId(id)) {
       setError(
-        "This page has an invalid ID and cannot be deleted. Refresh the Pages list."
+        "This page has an invalid database ID. Refresh the Pages list."
       )
       return
     }
 
     const page = pages.find(
-      (item) => item.id === id
+      (item) =>
+        String(item.id) === String(id)
     )
 
     if (!page) {
@@ -403,335 +459,236 @@ export default function PagesPage() {
         .eq("id", id)
         .select("id")
 
-      if (deleteError) {
-        throw new Error(
-          `Could not delete page: ${deleteError.message}`
-        )
-      }
-
-      if (!deletedRows?.length) {
-        throw new Error(
-          "The page was not deleted. It may no longer exist or you may not have permission to delete it."
-        )
-      }
-
-      setMessage(
-        "Page deleted successfully."
-      )
-
-      await loadPages()
-
-      router.refresh()
-    } catch (err) {
-      console.error(
-        "PAGE DELETE ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not delete page."
+    if (deleteError) {
+      throw new Error(
+        `Could not delete page: ${getSupabaseErrorMessage(
+          deleteError
+        )}`
       )
     }
-  }
 
-  async function togglePublished(page) {
-    if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can publish or unpublish pages."
-      )
-      return
-    }
-
-    if (!isValidId(page?.id)) {
-      setError(
-        "This page has an invalid ID. Refresh the Pages list and try again."
-      )
-      return
-    }
-
-    setError("")
-    setMessage("")
-
-    try {
-      const {
-        data,
-        error: updateError,
-      } = await supabase
-        .from("pages")
-        .update({
-          published:
-            !Boolean(page.published),
-          updated_at:
-            new Date().toISOString(),
-        })
-        .eq("id", page.id)
-        .select(
-          "id,published"
-        )
-        .maybeSingle()
-
-      if (updateError) {
-        throw new Error(
-          `Could not change page status: ${updateError.message}`
-        )
-      }
-
-      if (!data) {
-        throw new Error(
-          "The page could not be found."
-        )
-      }
-
-      setMessage(
-        data.published
-          ? "Page published."
-          : "Page unpublished."
-      )
-
-      await loadPages()
-
-      router.refresh()
-    } catch (err) {
-      console.error(
-        "PAGE STATUS ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not change page status."
+    if (
+      !deletedRows ||
+      deletedRows.length === 0
+    ) {
+      throw new Error(
+        "The page was not deleted. It may no longer exist or you may not have permission to delete it."
       )
     }
-  }
 
-  if (loading) {
-    return (
-      <main
-        style={{
-          minHeight: "60vh",
-          display: "grid",
-          placeItems: "center",
-        }}
-      >
-        <p>Loading Pages…</p>
-      </main>
+    setMessage(
+      "Page deleted successfully."
+    )
+
+    await loadPages()
+
+    router.refresh()
+  } catch (err) {
+    console.error(
+      "PAGE DELETE ERROR:",
+      err
+    )
+
+    setError(
+      err?.message ||
+        "Could not delete page."
     )
   }
+}
 
-  if (showEditor) {
-    return (
-      <main>
-        <div className="row spread">
-          <div>
-            <h1 className="h1">
-              {editingId
-                ? "Edit Page"
-                : "New Page"}
-            </h1>
+async function togglePublished(page) {
+  if (!isSuperAdmin) {
+    setError(
+      "Only a SUPER_ADMIN can publish or unpublish pages."
+    )
+    return
+  }
 
-            <p className="muted">
-              Signed in as{" "}
-              {admin?.email}
-            </p>
-          </div>
+  if (!isValidId(page?.id)) {
+    setError(
+      "This page has an invalid database ID. Refresh the Pages list."
+    )
+    return
+  }
 
-          <button
-            type="button"
-            className="btn"
-            onClick={closeEditor}
-          >
-            Back
-          </button>
+  setError("")
+  setMessage("")
+
+  try {
+    const nextPublished =
+      !Boolean(page.published)
+
+    const {
+      data,
+      error: updateError,
+    } = await supabase
+      .from("pages")
+      .update({
+        published: nextPublished,
+        updated_at:
+          new Date().toISOString(),
+      })
+      .eq("id", page.id)
+      .select("id,published")
+      .maybeSingle()
+
+    if (updateError) {
+      throw new Error(
+        `Could not change page status: ${getSupabaseErrorMessage(
+          updateError
+        )}`
+      )
+    }
+
+    if (!data || !isValidId(data.id)) {
+      throw new Error(
+        "The page status could not be changed. Refresh the Pages list and try again."
+      )
+    }
+
+    setMessage(
+      data.published
+        ? "Page published."
+        : "Page unpublished."
+    )
+
+    await loadPages()
+
+    router.refresh()
+  } catch (err) {
+    console.error(
+      "PAGE STATUS ERROR:",
+      err
+    )
+
+    setError(
+      err?.message ||
+        "Could not change page status."
+    )
+  }
+}
+
+if (loading) {
+  return (
+    <main
+      style={{
+        minHeight: "60vh",
+        display: "grid",
+        placeItems: "center",
+      }}
+    >
+      <p>Loading Pages…</p>
+    </main>
+  )
+}
+
+if (showEditor) {
+  return (
+    <main>
+      <div className="row spread">
+        <div>
+          <h1 className="h1">
+            {editingId
+              ? "Edit Page"
+              : "New Page"}
+          </h1>
+
+          <p className="muted">
+            Signed in as{" "}
+            {admin?.email}
+          </p>
         </div>
 
-        {message && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-            }}
-          >
-            {message}
-          </div>
-        )}
+        <button
+          type="button"
+          className="btn"
+          onClick={closeEditor}
+        >
+          Back
+        </button>
+      </div>
 
-        {error && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-              color: "#b00020",
-            }}
-          >
-            {error}
-          </div>
-        )}
-
+      {message && (
         <div
-          className="grid grid3"
+          className="card"
           style={{
             marginTop: "18px",
           }}
         >
-          <section
-            className="card"
-            style={{
-              gridColumn: "span 2",
-            }}
-          >
-            <label>
-              Page Title
-            </label>
+          {message}
+        </div>
+      )}
 
-            <input
-              className="input"
-              value={form.title}
-              onChange={(event) =>
-                updateField(
-                  "title",
-                  event.target.value
-                )
-              }
-              onBlur={() => {
-                if (!editingId) {
-                  updateField(
-                    "slug",
-                    makeSlug(
-                      form.title
-                    )
-                  )
-                }
-              }}
-              placeholder="Page title"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Slug
-            </label>
-
-            <input
-              className="input"
-              value={form.slug}
-              onChange={(event) =>
-                updateField(
-                  "slug",
-                  makeSlug(
-                    event.target.value
-                  )
-                )
-              }
-              placeholder="about"
-            />
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-                fontSize: "13px",
-              }}
-            >
-              Public URL:
-              {" /pages/"}
-              {form.slug ||
-                "your-slug"}
-            </p>
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Page Content
-            </label>
-
-            <textarea
-              className="input"
-              rows="24"
-              value={
-                form.content_html
-              }
-              onChange={(event) =>
-                updateField(
-                  "content_html",
-                  event.target.value
-                )
-              }
-              placeholder="Write your page content here. HTML is supported."
-            />
-          </section>
-<aside className="card">
-            <h2 className="h2">
-              Page Settings
-            </h2>        <p
-          className="muted"
+      {error && (
+        <div
+          className="card"
           style={{
-            marginTop: "8px",
+            marginTop: "18px",
+            color: "#b00020",
           }}
         >
-          Role:{" "}
-          <strong>
-            {admin?.role}
-          </strong>
-        </p>
+          {error}
+        </div>
+      )}
 
-        <label
+      <div
+        className="grid grid3"
+        style={{
+          marginTop: "18px",
+        }}
+      >
+        <section
+          className="card"
           style={{
-            display: "block",
-            marginTop: "20px",
+            gridColumn: "span 2",
           }}
         >
-          Meta Description
-        </label>
+          <label>
+            Page Title
+          </label>
 
-        <textarea
-          className="input"
-          rows="5"
-          value={
-            form.meta_description
-          }
-          onChange={(event) =>
-            updateField(
-              "meta_description",
-              event.target.value
-            )
-          }
-          placeholder="Short description for search engines"
-        />
-
-        <label
-          style={{
-            marginTop: "16px",
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-          }}
-        >
           <input
-            type="checkbox"
-            checked={
-              isSuperAdmin &&
-              form.published
-            }
-            disabled={
-              !isSuperAdmin
-            }
+            className="input"
+            value={form.title}
             onChange={(event) =>
               updateField(
-                "published",
-                event.target.checked
+                "title",
+                event.target.value
               )
             }
+            onBlur={() => {
+              if (!editingId) {
+                updateField(
+                  "slug",
+                  makeSlug(form.title)
+                )
+              }
+            }}
+            placeholder="Page title"
           />
 
-          Published
-        </label>
+          <label
+            style={{
+              marginTop: "16px",
+            }}
+          >
+            Slug
+          </label>
 
-        {!isSuperAdmin && (
+          <input
+            className="input"
+            value={form.slug}
+            onChange={(event) =>
+              updateField(
+                "slug",
+                makeSlug(
+                  event.target.value
+                )
+              )
+            }
+            placeholder="about"
+          />
+
           <p
             className="muted"
             style={{
@@ -739,225 +696,312 @@ export default function PagesPage() {
               fontSize: "13px",
             }}
           >
-            ARTICLE_USER pages must be
-            approved and published by a
-            SUPER_ADMIN.
+            Public URL:
+            {" /pages/"}
+            {form.slug ||
+              "your-slug"}
           </p>
-        )}
 
-        <label
-          style={{
-            marginTop: "16px",
-            display: "flex",
-            gap: "8px",
-            alignItems: "center",
-          }}
-        >
-          <input
-            type="checkbox"
-            checked={
-              form.no_index
+          <label
+            style={{
+              marginTop: "16px",
+            }}
+          >
+            Page Content
+          </label>
+
+          <textarea
+            className="input"
+            rows="24"
+            value={
+              form.content_html
             }
             onChange={(event) =>
               updateField(
-                "no_index",
-                event.target.checked
+                "content_html",
+                event.target.value
+              )
+            }
+            placeholder="Write your page content here. HTML is supported."
+          />
+        </section>
+        <aside className="card">
+          <h2 className="h2">
+            Page Settings
+          </h2>
+
+          <p
+            className="muted"
+            style={{
+              marginTop: "8px",
+            }}
+          >
+            Role:{" "}
+            <strong>
+              {admin?.role}
+            </strong>
+          </p>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "20px",
+            }}
+          >
+            Meta Description
+          </label>
+
+          <textarea
+            className="input"
+            rows="5"
+            value={
+              form.meta_description
+            }
+            onChange={(event) =>
+              updateField(
+                "meta_description",
+                event.target.value
+              )
+            }
+            placeholder="Short description for search engines"
+          />
+
+          <label
+            style={{
+              marginTop: "16px",
+              display: "flex",
+              gap: "8px",
+              alignItems: "center",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={
+                isSuperAdmin &&
+                Boolean(form.published)
+              }
+              disabled={!isSuperAdmin}
+              onChange={(event) =>
+                updateField(
+                  "published",
+                  event.target.checked
+                )
+              }
+            />
+
+            Published
+          </label>
+
+          {!isSuperAdmin && (
+            <p
+              className="muted"
+              style={{
+                marginTop: "6px",
+                fontSize: "13px",
+              }}
+            >
+              ARTICLE_USER pages are
+              saved as drafts and must
+              be approved and published
+              by a SUPER_ADMIN.
+            </p>
+          )}
+
+          <label
+            style={{
+              marginTop: "16px",
+              display: "flex",
+              gap: "8px",
+              alignItems: "center",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={
+                Boolean(form.no_index)
+              }
+              onChange={(event) =>
+                updateField(
+                  "no_index",
+                  event.target.checked
+                )
+              }
+            />
+
+            Hide from search engines
+          </label>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "16px",
+            }}
+          >
+            Sort Order
+          </label>
+
+          <input
+            className="input"
+            type="number"
+            value={
+              form.sort_order
+            }
+            onChange={(event) =>
+              updateField(
+                "sort_order",
+                event.target.value
               )
             }
           />
 
-          Hide from search engines
-        </label>
+          <button
+            type="button"
+            className="btn primary"
+            style={{
+              marginTop: "24px",
+              width: "100%",
+            }}
+            disabled={saving}
+            onClick={savePage}
+          >
+            {saving
+              ? "Saving..."
+              : editingId
+                ? "Update Page"
+                : "Create Page"}
+          </button>
 
-        <label
-          style={{
-            display: "block",
-            marginTop: "16px",
-          }}
-        >
-          Sort Order
-        </label>
-
-        <input
-          className="input"
-          type="number"
-          value={
-            form.sort_order
-          }
-          onChange={(event) =>
-            updateField(
-              "sort_order",
-              event.target.value
-            )
-          }
-        />
-
-        <button
-          type="button"
-          className="btn primary"
-          style={{
-            marginTop: "24px",
-            width: "100%",
-          }}
-          disabled={saving}
-          onClick={savePage}
-        >
-          {saving
-            ? "Saving..."
-            : editingId
-              ? "Update Page"
-              : "Create Page"}
-        </button>
-
-        <button
-          type="button"
-          className="btn"
-          style={{
-            marginTop: "10px",
-            width: "100%",
-          }}
-          disabled={saving}
-          onClick={closeEditor}
-        >
-          Cancel
-        </button>
-      </aside>
-    </div>
-  </main>
-)
-
+          <button
+            type="button"
+            className="btn"
+            style={{
+              marginTop: "10px",
+              width: "100%",
+            }}
+            disabled={saving}
+            onClick={closeEditor}
+          >
+            Cancel
+          </button>
+        </aside>
+      </div>
+    </main>
+  )
 }
 
 return (
-<main>
-<div className="row spread">
-<div>
-<h1 className="h1">
-Pages
-</h1>
-
-      <p className="muted">
-        Manage THE INDEX website
-        pages and legal content.
-      </p>
-    </div>
-
-    <button
-      type="button"
-      className="btn primary"
-      onClick={openNewPage}
-    >
-      New Page
-    </button>
-  </div>
-
-  {message && (
-    <div
-      className="card"
-      style={{
-        marginTop: "18px",
-      }}
-    >
-      {message}
-    </div>
-  )}
-
-  {error && (
-    <div
-      className="card"
-      style={{
-        marginTop: "18px",
-        color: "#b00020",
-      }}
-    >
-      {error}
-    </div>
-  )}
-
-  <div
-    className="card"
-    style={{
-      marginTop: "18px",
-    }}
-  >
-    {pages.length === 0 ? (
+  <main>
+    <div className="row spread">
       <div>
-        <h2 className="h2">
-          No pages yet
-        </h2>
+        <h1 className="h1">
+          Pages
+        </h1>
 
         <p className="muted">
-          Create your first website
-          page using the button above.
+          Manage THE INDEX website
+          pages and legal content.
         </p>
       </div>
-    ) : (
+
+      <button
+        type="button"
+        className="btn primary"
+        onClick={openNewPage}
+      >
+        New Page
+      </button>
+    </div>
+
+    {message && (
       <div
+        className="card"
         style={{
-          display: "grid",
-          gap: "14px",
+          marginTop: "18px",
         }}
       >
-        {pages.map((page) => (
-          <article
-            key={page.id}
-            style={{
-              border:
-                "1px solid #e5e5e5",
-              borderRadius: "14px",
-              padding: "16px",
-            }}
-          >
-            <div className="row spread">
-              <div
-                style={{
-                  minWidth: 0,
-                }}
-              >
-                <h2
-                  className="h2"
-                  style={{
-                    margin: 0,
-                  }}
-                >
-                  {page.title}
-                </h2>
+        {message}
+      </div>
+    )}
 
-                <p
-                  className="muted"
-                  style={{
-                    marginTop: "6px",
-                  }}
-                >
-                  /{page.slug}
-                </p>
+    {error && (
+      <div
+        className="card"
+        style={{
+          marginTop: "18px",
+          color: "#b00020",
+        }}
+      >
+        {error}
+      </div>
+    )}
 
+    <div
+      className="card"
+      style={{
+        marginTop: "18px",
+      }}
+    >
+      {pages.length === 0 ? (
+        <div>
+          <h2 className="h2">
+            No pages yet
+          </h2>
+
+          <p className="muted">
+            Create your first website
+            page using the button above.
+          </p>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: "grid",
+            gap: "14px",
+          }}
+        >
+          {pages.map((page) => (
+            <article
+              key={page.id}
+              style={{
+                border:
+                  "1px solid #e5e5e5",
+                borderRadius:
+                  "14px",
+                padding: "16px",
+              }}
+            >
+              <div className="row spread">
                 <div
                   style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "6px",
-                    marginTop: "10px",
+                    minWidth: 0,
                   }}
                 >
-                  <span
+                  <h2
+                    className="h2"
                     style={{
-                      border:
-                        "1px solid #ddd",
-                      borderRadius:
-                        "999px",
-                      padding:
-                        "4px 9px",
-                      fontSize:
-                        "12px",
+                      margin: 0,
                     }}
                   >
-                    {page.published
-                      ? "PUBLISHED"
-                      : "DRAFT"}
-                  </span>
+                    {page.title}
+                  </h2>
 
-                  {page.no_index && (
+                  <p
+                    className="muted"
+                    style={{
+                      marginTop: "6px",
+                    }}
+                  >
+                    /{page.slug}
+                  </p>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "6px",
+                      marginTop: "10px",
+                    }}
+                  >
                     <span
                       style={{
                         border:
@@ -966,82 +1010,102 @@ Pages
                           "999px",
                         padding:
                           "4px 9px",
-                        fontSize:
-                          "12px",
+                        fontSize: "12px",
                       }}
                     >
-                      NO INDEX
+                      {page.published
+                        ? "PUBLISHED"
+                        : "DRAFT"}
                     </span>
-                  )}
 
-                  <span
-                    style={{
-                      border:
-                        "1px solid #ddd",
-                      borderRadius:
-                        "999px",
-                      padding:
-                        "4px 9px",
-                      fontSize:
-                        "12px",
-                    }}
-                  >
-                    Order:{" "}
-                    {page.sort_order}
-                  </span>
+                    {page.no_index && (
+                      <span
+                        style={{
+                          border:
+                            "1px solid #ddd",
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "4px 9px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        NO INDEX
+                      </span>
+                    )}
+
+                    <span
+                      style={{
+                        border:
+                          "1px solid #ddd",
+                        borderRadius:
+                          "999px",
+                        padding:
+                          "4px 9px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      Order:{" "}
+                      {page.sort_order}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  flexWrap: "wrap",
-                  justifyContent:
-                    "flex-end",
-                }}
-              >
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() =>
-                    editPage(page)
-                  }
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    justifyContent:
+                      "flex-end",
+                  }}
                 >
-                  Edit
-                </button>
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={() =>
-                    togglePublished(page)
-                  }
-                >
-                  {page.published
-                    ? "Unpublish"
-                    : "Publish"}
-                </button>
-
-                {isSuperAdmin && (
                   <button
                     type="button"
                     className="btn"
                     onClick={() =>
-                      deletePage(page.id)
+                      editPage(page)
                     }
                   >
-                    Delete
+                    Edit
                   </button>
-                )}
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-    )}
-  </div>
-</main>
 
+                  {isSuperAdmin && (
+                    <>
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          togglePublished(
+                            page
+                          )
+                        }
+                      >
+                        {page.published
+                          ? "Unpublish"
+                          : "Publish"}
+                      </button>
+
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          deletePage(
+                            page.id
+                          )
+                        }
+                      >
+                        Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </div>
+  </main>
 )
 }
