@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 const EMPTY_FORM = {
@@ -8,7 +9,7 @@ const EMPTY_FORM = {
   slug: "",
   content_html: "",
   meta_description: "",
-  published: true,
+  published: false,
   no_index: false,
   sort_order: 0,
 }
@@ -23,6 +24,8 @@ function makeSlug(value) {
 }
 
 export default function PagesPage() {
+  const router = useRouter()
+
   const [pages, setPages] = useState([])
   const [admin, setAdmin] = useState(null)
 
@@ -57,7 +60,9 @@ export default function PagesPage() {
       error: adminError,
     } = await supabase
       .from("admin_users")
-      .select("id,user_id,role,active")
+      .select(
+        "id,user_id,role,active"
+      )
       .eq("user_id", user.id)
       .eq("active", true)
       .maybeSingle()
@@ -120,7 +125,7 @@ export default function PagesPage() {
       console.error(err)
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not load Pages."
       )
     } finally {
@@ -146,6 +151,11 @@ export default function PagesPage() {
     })
   }
 
+  function closeEditor() {
+    setShowEditor(false)
+    resetEditor()
+  }
+
   function openNewPage() {
     resetEditor()
     setMessage("")
@@ -159,7 +169,8 @@ export default function PagesPage() {
     setForm({
       title: page.title || "",
       slug: page.slug || "",
-      content_html: page.content_html || "",
+      content_html:
+        page.content_html || "",
       meta_description:
         page.meta_description || "",
       published:
@@ -210,6 +221,11 @@ export default function PagesPage() {
       const now =
         new Date().toISOString()
 
+      const published =
+        isSuperAdmin
+          ? Boolean(form.published)
+          : false
+
       const payload = {
         title,
         slug,
@@ -218,8 +234,7 @@ export default function PagesPage() {
         meta_description:
           form.meta_description.trim() ||
           null,
-        published:
-          Boolean(form.published),
+        published,
         no_index:
           Boolean(form.no_index),
         sort_order:
@@ -237,7 +252,9 @@ export default function PagesPage() {
           .from("pages")
           .update(payload)
           .eq("id", editingId)
-          .select()
+          .select(
+            "id,title,slug,content_html,meta_description,published,no_index,sort_order,created_at,updated_at"
+          )
           .single()
 
         if (updateError) {
@@ -253,11 +270,10 @@ export default function PagesPage() {
           error: insertError,
         } = await supabase
           .from("pages")
-          .insert({
-            ...payload,
-            id: crypto.randomUUID(),
-          })
-          .select()
+          .insert(payload)
+          .select(
+            "id,title,slug,content_html,meta_description,published,no_index,sort_order,created_at,updated_at"
+          )
           .single()
 
         if (insertError) {
@@ -281,21 +297,26 @@ export default function PagesPage() {
           : "Page created successfully."
       )
 
-      setShowEditor(false)
-      resetEditor()
+      closeEditor()
 
       await loadPages()
+
+      router.refresh()
     } catch (err) {
-      console.error(err)
+      console.error(
+        "PAGE SAVE ERROR:",
+        err
+      )
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not save page."
       )
     } finally {
       setSaving(false)
     }
   }
+
   async function deletePage(id) {
     if (!isSuperAdmin) {
       setError(
@@ -342,13 +363,20 @@ export default function PagesPage() {
       console.error(err)
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not delete page."
       )
     }
   }
 
   async function togglePublished(page) {
+    if (!isSuperAdmin) {
+      setError(
+        "Only a SUPER_ADMIN can publish or unpublish pages."
+      )
+      return
+    }
+
     setError("")
     setMessage("")
 
@@ -382,7 +410,7 @@ export default function PagesPage() {
       console.error(err)
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not change page status."
       )
     }
@@ -422,10 +450,7 @@ export default function PagesPage() {
           <button
             type="button"
             className="btn"
-            onClick={() => {
-              setShowEditor(false)
-              resetEditor()
-            }}
+            onClick={closeEditor}
           >
             Back
           </button>
@@ -524,7 +549,8 @@ export default function PagesPage() {
             >
               Public URL:
               {" /pages/"}
-              {form.slug || "your-slug"}
+              {form.slug ||
+                "your-slug"}
             </p>
 
             <label
@@ -602,7 +628,11 @@ export default function PagesPage() {
               <input
                 type="checkbox"
                 checked={
+                  isSuperAdmin &&
                   form.published
+                }
+                disabled={
+                  !isSuperAdmin
                 }
                 onChange={(event) =>
                   updateField(
@@ -614,6 +644,21 @@ export default function PagesPage() {
 
               Published
             </label>
+
+            {!isSuperAdmin && (
+              <p
+                className="muted"
+                style={{
+                  marginTop: "6px",
+                  fontSize: "13px",
+                }}
+              >
+                ARTICLE_USER pages
+                must be approved and
+                published by a
+                SUPER_ADMIN.
+              </p>
+            )}
 
             <label
               style={{
@@ -669,9 +714,7 @@ export default function PagesPage() {
                 width: "100%",
               }}
               disabled={saving}
-              onClick={
-                savePage
-              }
+              onClick={savePage}
             >
               {saving
                 ? "Saving..."
@@ -688,10 +731,7 @@ export default function PagesPage() {
                 width: "100%",
               }}
               disabled={saving}
-              onClick={() => {
-                setShowEditor(false)
-                resetEditor()
-              }}
+              onClick={closeEditor}
             >
               Cancel
             </button>
@@ -700,7 +740,7 @@ export default function PagesPage() {
       </main>
     )
   }
-  return (
+return (
     <main>
       <div className="row spread">
         <div>
@@ -717,9 +757,7 @@ export default function PagesPage() {
         <button
           type="button"
           className="btn primary"
-          onClick={
-            openNewPage
-          }
+          onClick={openNewPage}
         >
           New Page
         </button>
@@ -773,56 +811,66 @@ export default function PagesPage() {
               gap: "14px",
             }}
           >
-            {pages.map(
-              (page) => (
-                <article
-                  key={page.id}
-                  style={{
-                    border:
-                      "1px solid #e5e5e5",
-                    borderRadius:
-                      "14px",
-                    padding: "16px",
-                  }}
-                >
+            {pages.map((page) => (
+              <article
+                key={page.id}
+                style={{
+                  border:
+                    "1px solid #e5e5e5",
+                  borderRadius:
+                    "14px",
+                  padding: "16px",
+                }}
+              >
+                <div className="row spread">
                   <div
-                    className="row spread"
+                    style={{
+                      minWidth: 0,
+                    }}
                   >
-                    <div
+                    <h2
+                      className="h2"
                       style={{
-                        minWidth: 0,
+                        margin: 0,
                       }}
                     >
-                      <h2
-                        className="h2"
-                        style={{
-                          margin: 0,
-                        }}
-                      >
-                        {page.title}
-                      </h2>
+                      {page.title}
+                    </h2>
 
-                      <p
-                        className="muted"
-                        style={{
-                          marginTop:
-                            "6px",
-                        }}
-                      >
-                        /{page.slug}
-                      </p>
+                    <p
+                      className="muted"
+                      style={{
+                        marginTop: "6px",
+                      }}
+                    >
+                      /{page.slug}
+                    </p>
 
-                      <div
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "6px",
+                        marginTop: "10px",
+                      }}
+                    >
+                      <span
                         style={{
-                          display:
-                            "flex",
-                          flexWrap:
-                            "wrap",
-                          gap: "6px",
-                          marginTop:
-                            "10px",
+                          border:
+                            "1px solid #ddd",
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "4px 9px",
+                          fontSize: "12px",
                         }}
                       >
+                        {page.published
+                          ? "PUBLISHED"
+                          : "DRAFT"}
+                      </span>
+
+                      {page.no_index && (
                         <span
                           style={{
                             border:
@@ -831,75 +879,50 @@ export default function PagesPage() {
                               "999px",
                             padding:
                               "4px 9px",
-                            fontSize:
-                              "12px",
+                            fontSize: "12px",
                           }}
                         >
-                          {page.published
-                            ? "PUBLISHED"
-                            : "DRAFT"}
+                          NO INDEX
                         </span>
+                      )}
 
-                        {page.no_index && (
-                          <span
-                            style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "4px 9px",
-                              fontSize:
-                                "12px",
-                            }}
-                          >
-                            NO INDEX
-                          </span>
-                        )}
-
-                        <span
-                          style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 9px",
-                            fontSize:
-                              "12px",
-                          }}
-                        >
-                          Order:{" "}
-                          {
-                            page.sort_order
-                          }
-                        </span>
-                      </div>
+                      <span
+                        style={{
+                          border:
+                            "1px solid #ddd",
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "4px 9px",
+                          fontSize: "12px",
+                        }}
+                      >
+                        Order:{" "}
+                        {page.sort_order}
+                      </span>
                     </div>
+                  </div>
 
-                    <div
-                      style={{
-                        display:
-                          "flex",
-                        gap: "8px",
-                        flexWrap:
-                          "wrap",
-                        justifyContent:
-                          "flex-end",
-                      }}
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      flexWrap: "wrap",
+                      justifyContent:
+                        "flex-end",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() =>
+                        editPage(page)
+                      }
                     >
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={() =>
-                          editPage(
-                            page
-                          )
-                        }
-                      >
-                        Edit
-                      </button>
+                      Edit
+                    </button>
 
+                    {isSuperAdmin && (
                       <button
                         type="button"
                         className="btn"
@@ -913,25 +936,25 @@ export default function PagesPage() {
                           ? "Unpublish"
                           : "Publish"}
                       </button>
+                    )}
 
-                      {isSuperAdmin && (
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() =>
-                            deletePage(
-                              page.id
-                            )
-                          }
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
+                    {isSuperAdmin && (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          deletePage(
+                            page.id
+                          )
+                        }
+                      >
+                        Delete
+                      </button>
+                    )}
                   </div>
-                </article>
-              )
-            )}
+                </div>
+              </article>
+            ))}
           </div>
         )}
       </div>
