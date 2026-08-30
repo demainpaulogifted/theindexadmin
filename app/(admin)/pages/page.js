@@ -1,6 +1,220 @@
-async function savePage() {
+"use client"
+
+import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { supabase } from "@/lib/supabase"
+
+const EMPTY_FORM = {
+  title: "",
+  slug: "",
+  content_html: "",
+  meta_description: "",
+  published: true,
+  no_index: false,
+  sort_order: 0,
+}
+
+function makeSlug(value) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+}
+
+function isValidId(id) {
+  return Boolean(
+    id &&
+      id !== "null" &&
+      id !== "undefined"
+  )
+}
+
+export default function PagesPage() {
+  const router = useRouter()
+
+  const [pages, setPages] = useState([])
+  const [admin, setAdmin] = useState(null)
+
+  const [form, setForm] = useState({
+    ...EMPTY_FORM,
+  })
+
+  const [editingId, setEditingId] = useState(null)
+
+  const [showEditor, setShowEditor] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+
+  const isSuperAdmin =
+    admin?.role === "SUPER_ADMIN"
+
+  async function loadAdmin() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      throw new Error(
+        userError?.message ||
+          "Authentication session missing."
+      )
+    }
+
+    const {
+      data,
+      error: adminError,
+    } = await supabase
+      .from("admin_users")
+      .select(
+        "id,user_id,role,active"
+      )
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .maybeSingle()
+
+    if (adminError) {
+      throw new Error(
+        `Admin authorization failed: ${adminError.message}`
+      )
+    }
+
+    if (!data) {
+      throw new Error(
+        "No active admin record found."
+      )
+    }
+
+    const currentAdmin = {
+      ...data,
+      email: user.email,
+    }
+
+    setAdmin(currentAdmin)
+
+    return currentAdmin
+  }
+
+  async function loadPages() {
+    const {
+      data,
+      error: pagesError,
+    } = await supabase
+      .from("pages")
+      .select(
+        "id,title,slug,content_html,meta_description,published,no_index,sort_order,created_at,updated_at"
+      )
+      .order("sort_order", {
+        ascending: true,
+      })
+      .order("title", {
+        ascending: true,
+      })
+
+    if (pagesError) {
+      throw new Error(
+        `Could not load pages: ${pagesError.message}`
+      )
+    }
+
+    setPages(data || [])
+  }
+
+  async function loadData() {
+    setLoading(true)
+    setError("")
+
+    try {
+      await loadAdmin()
+      await loadPages()
+    } catch (err) {
+      console.error(
+        "PAGES LOAD ERROR:",
+        err
+      )
+
+      setError(
+        err?.message ||
+          "Could not load Pages."
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  function updateField(field, value) {
+    setForm((current) => ({
+      ...current,
+      [field]: value,
+    }))
+  }
+
+  function resetEditor() {
+    setEditingId(null)
+
+    setForm({
+      ...EMPTY_FORM,
+    })
+  }
+
+  function closeEditor() {
+    setShowEditor(false)
+    resetEditor()
+    setMessage("")
+    setError("")
+  }
+
+  function openNewPage() {
+    resetEditor()
+    setMessage("")
+    setError("")
+    setShowEditor(true)
+  }
+
+  function editPage(page) {
+    if (!isValidId(page?.id)) {
+      setError(
+        "This page has an invalid ID. Refresh the Pages list and try again."
+      )
+      return
+    }
+
+    setEditingId(page.id)
+
+    setForm({
+      title: page.title || "",
+      slug: page.slug || "",
+      content_html:
+        page.content_html || "",
+      meta_description:
+        page.meta_description || "",
+      published:
+        Boolean(page.published),
+      no_index:
+        Boolean(page.no_index),
+      sort_order:
+        Number(page.sort_order || 0),
+    })
+
+    setMessage("")
+    setError("")
+    setShowEditor(true)
+  }
+
+  async function savePage() {
     if (!admin) {
-      setError("Admin account has not loaded.")
+      setError(
+        "Admin account has not loaded."
+      )
       return
     }
 
@@ -9,7 +223,8 @@ async function savePage() {
     setError("")
 
     try {
-      const title = form.title.trim()
+      const title =
+        form.title.trim()
 
       const slug =
         form.slug.trim() ||
@@ -27,16 +242,9 @@ async function savePage() {
         )
       }
 
-      /*
-       * IMPORTANT:
-       * When editing, editingId MUST be a real UUID.
-       * Never allow null, undefined or the string "null"
-       * to reach Supabase.
-       */
       if (
         editingId &&
-        (editingId === "null" ||
-          editingId === "undefined")
+        !isValidId(editingId)
       ) {
         throw new Error(
           "This page has an invalid ID. Refresh the Pages list and try again."
@@ -51,10 +259,9 @@ async function savePage() {
         meta_description:
           form.meta_description.trim() ||
           null,
-        published:
-          isSuperAdmin
-            ? Boolean(form.published)
-            : false,
+        published: isSuperAdmin
+          ? Boolean(form.published)
+          : false,
         no_index:
           Boolean(form.no_index),
         sort_order:
@@ -66,9 +273,6 @@ async function savePage() {
       let saved = null
 
       if (editingId) {
-        /*
-         * UPDATE EXISTING PAGE
-         */
         const {
           data,
           error: updateError,
@@ -95,12 +299,6 @@ async function savePage() {
 
         saved = data
       } else {
-        /*
-         * CREATE NEW PAGE
-         *
-         * Do NOT manually supply id.
-         * Let Supabase/PostgreSQL generate the UUID.
-         */
         const {
           data,
           error: insertError,
@@ -127,8 +325,11 @@ async function savePage() {
         )
       }
 
+      const wasEditing =
+        Boolean(editingId)
+
       setMessage(
-        editingId
+        wasEditing
           ? "Page updated successfully."
           : "Page created successfully."
       )
@@ -138,11 +339,6 @@ async function savePage() {
 
       await loadPages()
 
-      /*
-       * Refresh the Next.js router so any
-       * server-rendered public content can
-       * pick up the new database data.
-       */
       router.refresh()
     } catch (err) {
       console.error(
@@ -167,15 +363,7 @@ async function savePage() {
       return
     }
 
-    /*
-     * Never send null or the string "null"
-     * to a UUID column.
-     */
-    if (
-      !id ||
-      id === "null" ||
-      id === "undefined"
-    ) {
+    if (!isValidId(id)) {
       setError(
         "This page has an invalid ID and cannot be deleted. Refresh the Pages list."
       )
@@ -193,11 +381,12 @@ async function savePage() {
       return
     }
 
-    if (
-      !window.confirm(
+    const confirmed =
+      window.confirm(
         `Delete "${page.title || "this page"}" permanently?`
       )
-    ) {
+
+    if (!confirmed) {
       return
     }
 
@@ -254,11 +443,7 @@ async function savePage() {
       return
     }
 
-    if (
-      !page?.id ||
-      page.id === "null" ||
-      page.id === "undefined"
-    ) {
+    if (!isValidId(page?.id)) {
       setError(
         "This page has an invalid ID. Refresh the Pages list and try again."
       )
@@ -319,7 +504,8 @@ async function savePage() {
       )
     }
   }
-if (loading) {
+
+  if (loading) {
     return (
       <main
         style={{
@@ -478,446 +664,384 @@ if (loading) {
               placeholder="Write your page content here. HTML is supported."
             />
           </section>
-
-          <aside className="card">
+<aside className="card">
             <h2 className="h2">
               Page Settings
-            </h2>
+            </h2>        <p
+          className="muted"
+          style={{
+            marginTop: "8px",
+          }}
+        >
+          Role:{" "}
+          <strong>
+            {admin?.role}
+          </strong>
+        </p>
 
-            <p
-              className="muted"
-              style={{
-                marginTop: "8px",
-              }}
-            >
-              Role:{" "}
-              <strong>
-                {admin?.role}
-              </strong>
-            </p>
+        <label
+          style={{
+            display: "block",
+            marginTop: "20px",
+          }}
+        >
+          Meta Description
+        </label>
 
-            <label
-              style={{
-                marginTop: "20px",
-              }}
-            >
-              Meta Description
-            </label>
+        <textarea
+          className="input"
+          rows="5"
+          value={
+            form.meta_description
+          }
+          onChange={(event) =>
+            updateField(
+              "meta_description",
+              event.target.value
+            )
+          }
+          placeholder="Short description for search engines"
+        />
 
-            <textarea
-              className="input"
-              rows="5"
-              value={
-                form.meta_description
-              }
-              onChange={(event) =>
-                updateField(
-                  "meta_description",
-                  event.target.value
-                )
-              }
-              placeholder="Short description for search engines"
-            />
+        <label
+          style={{
+            marginTop: "16px",
+            display: "flex",
+            gap: "8px",
+            alignItems: "center",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={
+              isSuperAdmin &&
+              form.published
+            }
+            disabled={
+              !isSuperAdmin
+            }
+            onChange={(event) =>
+              updateField(
+                "published",
+                event.target.checked
+              )
+            }
+          />
 
-            <label
-              style={{
-                marginTop: "16px",
-                display: "flex",
-                gap: "8px",
-                alignItems: "center",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  isSuperAdmin &&
-                  form.published
-                }
-                disabled={
-                  !isSuperAdmin
-                }
-                onChange={(event) =>
-                  updateField(
-                    "published",
-                    event.target.checked
-                  )
-                }
-              />
+          Published
+        </label>
 
-              Published
-            </label>
-
-            {!isSuperAdmin && (
-              <p
-                className="muted"
-                style={{
-                  marginTop: "6px",
-                  fontSize: "13px",
-                }}
-              >
-                ARTICLE_USER pages
-                must be approved and
-                published by a
-                SUPER_ADMIN.
-              </p>
-            )}
-
-            <label
-              style={{
-                marginTop: "16px",
-                display: "flex",
-                gap: "8px",
-                alignItems: "center",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={
-                  form.no_index
-                }
-                onChange={(event) =>
-                  updateField(
-                    "no_index",
-                    event.target.checked
-                  )
-                }
-              />
-
-              Hide from search engines
-            </label>
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Sort Order
-            </label>
-
-            <input
-              className="input"
-              type="number"
-              value={
-                form.sort_order
-              }
-              onChange={(event) =>
-                updateField(
-                  "sort_order",
-                  event.target.value
-                )
-              }
-            />
-
-            <button
-              type="button"
-              className="btn primary"
-              style={{
-                marginTop: "24px",
-                width: "100%",
-              }}
-              disabled={saving}
-              onClick={savePage}
-            >
-              {saving
-                ? "Saving..."
-                : editingId
-                  ? "Update Page"
-                  : "Create Page"}
-            </button>
-
-            <button
-              type="button"
-              className="btn"
-              style={{
-                marginTop: "10px",
-                width: "100%",
-              }}
-              disabled={saving}
-              onClick={closeEditor}
-            >
-              Cancel
-            </button>
-          </aside>
-        </div>
-      </main>
-    )
-  }
-
-  return (
-    <main>
-      <div className="row spread">
-        <div>
-          <h1 className="h1">
-            Pages
-          </h1>
-
-          <p className="muted">
-            Manage THE INDEX website
-            pages and legal content.
+        {!isSuperAdmin && (
+          <p
+            className="muted"
+            style={{
+              marginTop: "6px",
+              fontSize: "13px",
+            }}
+          >
+            ARTICLE_USER pages must be
+            approved and published by a
+            SUPER_ADMIN.
           </p>
-        </div>
+        )}
+
+        <label
+          style={{
+            marginTop: "16px",
+            display: "flex",
+            gap: "8px",
+            alignItems: "center",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={
+              form.no_index
+            }
+            onChange={(event) =>
+              updateField(
+                "no_index",
+                event.target.checked
+              )
+            }
+          />
+
+          Hide from search engines
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          Sort Order
+        </label>
+
+        <input
+          className="input"
+          type="number"
+          value={
+            form.sort_order
+          }
+          onChange={(event) =>
+            updateField(
+              "sort_order",
+              event.target.value
+            )
+          }
+        />
 
         <button
           type="button"
           className="btn primary"
-          onClick={openNewPage}
+          style={{
+            marginTop: "24px",
+            width: "100%",
+          }}
+          disabled={saving}
+          onClick={savePage}
         >
-          New Page
+          {saving
+            ? "Saving..."
+            : editingId
+              ? "Update Page"
+              : "Create Page"}
         </button>
+
+        <button
+          type="button"
+          className="btn"
+          style={{
+            marginTop: "10px",
+            width: "100%",
+          }}
+          disabled={saving}
+          onClick={closeEditor}
+        >
+          Cancel
+        </button>
+      </aside>
+    </div>
+  </main>
+)
+
+}
+
+return (
+<main>
+<div className="row spread">
+<div>
+<h1 className="h1">
+Pages
+</h1>
+
+      <p className="muted">
+        Manage THE INDEX website
+        pages and legal content.
+      </p>
+    </div>
+
+    <button
+      type="button"
+      className="btn primary"
+      onClick={openNewPage}
+    >
+      New Page
+    </button>
+  </div>
+
+  {message && (
+    <div
+      className="card"
+      style={{
+        marginTop: "18px",
+      }}
+    >
+      {message}
+    </div>
+  )}
+
+  {error && (
+    <div
+      className="card"
+      style={{
+        marginTop: "18px",
+        color: "#b00020",
+      }}
+    >
+      {error}
+    </div>
+  )}
+
+  <div
+    className="card"
+    style={{
+      marginTop: "18px",
+    }}
+  >
+    {pages.length === 0 ? (
+      <div>
+        <h2 className="h2">
+          No pages yet
+        </h2>
+
+        <p className="muted">
+          Create your first website
+          page using the button above.
+        </p>
       </div>
-
-      {message && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-          }}
-        >
-          {message}
-        </div>
-      )}
-
-      {error && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-            color: "#b00020",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
+    ) : (
       <div
-        className="card"
         style={{
-          marginTop: "18px",
+          display: "grid",
+          gap: "14px",
         }}
       >
-        {pages.length === 0 ? (
-          <div>
-            <h2 className="h2">
-              No pages yet
-            </h2>
-
-            <p className="muted">
-              Create your first website
-              page using the button
-              above.
-            </p>
-          </div>
-        ) : (
-          <div
+        {pages.map((page) => (
+          <article
+            key={page.id}
             style={{
-              display: "grid",
-              gap: "14px",
+              border:
+                "1px solid #e5e5e5",
+              borderRadius: "14px",
+              padding: "16px",
             }}
           >
-            {pages.map((page) => {
-              const validId =
-                Boolean(page?.id) &&
-                page.id !== "null" &&
-                page.id !== "undefined"
-
-              return (
-                <article
-                  key={
-                    validId
-                      ? page.id
-                      : `invalid-${page.slug || page.title || Math.random()}`
-                  }
+            <div className="row spread">
+              <div
+                style={{
+                  minWidth: 0,
+                }}
+              >
+                <h2
+                  className="h2"
                   style={{
-                    border:
-                      "1px solid #e5e5e5",
-                    borderRadius:
-                      "14px",
-                    padding: "16px",
+                    margin: 0,
                   }}
                 >
-                  <div className="row spread">
-                    <div
+                  {page.title}
+                </h2>
+
+                <p
+                  className="muted"
+                  style={{
+                    marginTop: "6px",
+                  }}
+                >
+                  /{page.slug}
+                </p>
+
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px",
+                    marginTop: "10px",
+                  }}
+                >
+                  <span
+                    style={{
+                      border:
+                        "1px solid #ddd",
+                      borderRadius:
+                        "999px",
+                      padding:
+                        "4px 9px",
+                      fontSize:
+                        "12px",
+                    }}
+                  >
+                    {page.published
+                      ? "PUBLISHED"
+                      : "DRAFT"}
+                  </span>
+
+                  {page.no_index && (
+                    <span
                       style={{
-                        minWidth: 0,
+                        border:
+                          "1px solid #ddd",
+                        borderRadius:
+                          "999px",
+                        padding:
+                          "4px 9px",
+                        fontSize:
+                          "12px",
                       }}
                     >
-                      <h2
-                        className="h2"
-                        style={{
-                          margin: 0,
-                        }}
-                      >
-                        {page.title}
-                      </h2>
+                      NO INDEX
+                    </span>
+                  )}
 
-                      <p
-                        className="muted"
-                        style={{
-                          marginTop: "6px",
-                        }}
-                      >
-                        /{page.slug}
-                      </p>
+                  <span
+                    style={{
+                      border:
+                        "1px solid #ddd",
+                      borderRadius:
+                        "999px",
+                      padding:
+                        "4px 9px",
+                      fontSize:
+                        "12px",
+                    }}
+                  >
+                    Order:{" "}
+                    {page.sort_order}
+                  </span>
+                </div>
+              </div>
 
-                      <div
-                        style={{
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: "6px",
-                          marginTop: "10px",
-                        }}
-                      >
-                        <span
-                          style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 9px",
-                            fontSize:
-                              "12px",
-                          }}
-                        >
-                          {page.published
-                            ? "PUBLISHED"
-                            : "DRAFT"}
-                        </span>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "8px",
+                  flexWrap: "wrap",
+                  justifyContent:
+                    "flex-end",
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    editPage(page)
+                  }
+                >
+                  Edit
+                </button>
 
-                        {page.no_index && (
-                          <span
-                            style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "4px 9px",
-                              fontSize:
-                                "12px",
-                            }}
-                          >
-                            NO INDEX
-                          </span>
-                        )}
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() =>
+                    togglePublished(page)
+                  }
+                >
+                  {page.published
+                    ? "Unpublish"
+                    : "Publish"}
+                </button>
 
-                        <span
-                          style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 9px",
-                            fontSize:
-                              "12px",
-                          }}
-                        >
-                          Order:{" "}
-                          {page.sort_order}
-                        </span>
-
-                        {!validId && (
-                          <span
-                            style={{
-                              border:
-                                "1px solid #b00020",
-                              color:
-                                "#b00020",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "4px 9px",
-                              fontSize:
-                                "12px",
-                            }}
-                          >
-                            INVALID ID
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        flexWrap: "wrap",
-                        justifyContent:
-                          "flex-end",
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="btn"
-                        disabled={!validId}
-                        onClick={() => {
-                          if (!validId) {
-                            setError(
-                              "This page has an invalid ID and cannot be edited. Refresh the Pages list."
-                            )
-                            return
-                          }
-
-                          editPage(page)
-                        }}
-                      >
-                        Edit
-                      </button>
-
-                      {isSuperAdmin && (
-                        <button
-                          type="button"
-                          className="btn"
-                          disabled={!validId}
-                          onClick={() => {
-                            if (!validId) {
-                              setError(
-                                "This page has an invalid ID and cannot be published."
-                              )
-                              return
-                            }
-
-                            togglePublished(
-                              page
-                            )
-                          }}
-                        >
-                          {page.published
-                            ? "Unpublish"
-                            : "Publish"}
-                        </button>
-                      )}
-
-                      {isSuperAdmin && (
-                        <button
-                          type="button"
-                          className="btn"
-                          disabled={!validId}
-                          onClick={() => {
-                            if (!validId) {
-                              setError(
-                                "This page has an invalid ID and cannot be deleted."
-                              )
-                              return
-                            }
-
-                            deletePage(
-                              page.id
-                            )
-                          }}
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </article>
-              )
-            })}
-          </div>
-        )}
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={() =>
+                      deletePage(page.id)
+                    }
+                  >
+                    Delete
+                  </button>
+                )}
+              </div>
+            </div>
+          </article>
+        ))}
       </div>
-    </main>
-  )
+    )}
+  </div>
+</main>
+
+)
 }
