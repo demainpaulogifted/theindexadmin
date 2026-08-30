@@ -3,24 +3,31 @@
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
 
+const DEFAULT_SETTINGS = {
+  site_name: "THE INDEX",
+  tagline: "Meaningful content. Ideas that matter.",
+  blog_description: "",
+  meta_description: "",
+  default_seo_title: "",
+  site_url: "https://theindexpublic.vercel.app",
+  logo_url: "",
+  favicon_url: "",
+  social_image_url: "",
+}
+
 export default function SettingsPage() {
   const [admin, setAdmin] = useState(null)
+  const [settingsId, setSettingsId] = useState(null)
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
-  const [form, setForm] = useState({
-    site_name: "THE INDEX",
-    tagline: "Meaningful content. Ideas that matter.",
-    blog_description: "",
-    meta_description: "",
-    default_seo_title: "",
-    site_url: "https://theindexpublic.vercel.app",
-    logo_url: "",
-    favicon_url: "",
-    social_image_url: "",
-  })
+  const [form, setForm] = useState(
+    DEFAULT_SETTINGS
+  )
 
   useEffect(() => {
     loadSettings()
@@ -29,6 +36,7 @@ export default function SettingsPage() {
   async function loadSettings() {
     setLoading(true)
     setError("")
+    setMessage("")
 
     try {
       const {
@@ -48,13 +56,17 @@ export default function SettingsPage() {
         error: adminError,
       } = await supabase
         .from("admin_users")
-        .select("id,user_id,role,active")
+        .select(
+          "id,user_id,role,active"
+        )
         .eq("user_id", user.id)
         .eq("active", true)
         .maybeSingle()
 
       if (adminError) {
-        throw new Error(adminError.message)
+        throw new Error(
+          `Admin check failed: ${adminError.message}`
+        )
       }
 
       if (!currentAdmin) {
@@ -65,14 +77,17 @@ export default function SettingsPage() {
 
       setAdmin(currentAdmin)
 
-      if (currentAdmin.role !== "SUPER_ADMIN") {
+      if (
+        currentAdmin.role !==
+        "SUPER_ADMIN"
+      ) {
         throw new Error(
           "Only a SUPER_ADMIN can manage Settings."
         )
       }
 
       const {
-        data,
+        data: settingsRows,
         error: settingsError,
       } = await supabase
         .from("site_settings")
@@ -80,7 +95,6 @@ export default function SettingsPage() {
           "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
         )
         .limit(1)
-        .maybeSingle()
 
       if (settingsError) {
         throw new Error(
@@ -88,43 +102,61 @@ export default function SettingsPage() {
         )
       }
 
+      const data =
+        settingsRows?.[0] || null
+
       if (data) {
+        setSettingsId(data.id)
+
         setForm({
           site_name:
-            data.site_name || "THE INDEX",
+            data.site_name ??
+            DEFAULT_SETTINGS.site_name,
 
           tagline:
-            data.tagline ||
-            "Meaningful content. Ideas that matter.",
+            data.tagline ??
+            DEFAULT_SETTINGS.tagline,
 
           blog_description:
-            data.blog_description || "",
+            data.blog_description ??
+            DEFAULT_SETTINGS.blog_description,
 
           meta_description:
-            data.meta_description || "",
+            data.meta_description ??
+            DEFAULT_SETTINGS.meta_description,
 
           default_seo_title:
-            data.default_seo_title || "",
+            data.default_seo_title ??
+            DEFAULT_SETTINGS.default_seo_title,
 
           site_url:
-            data.site_url ||
-            "https://theindexpublic.vercel.app",
+            data.site_url ??
+            DEFAULT_SETTINGS.site_url,
 
           logo_url:
-            data.logo_url || "",
+            data.logo_url ??
+            DEFAULT_SETTINGS.logo_url,
 
           favicon_url:
-            data.favicon_url || "",
+            data.favicon_url ??
+            DEFAULT_SETTINGS.favicon_url,
 
           social_image_url:
-            data.social_image_url || "",
+            data.social_image_url ??
+            DEFAULT_SETTINGS.social_image_url,
         })
+      } else {
+        setSettingsId(null)
+        setForm(DEFAULT_SETTINGS)
       }
     } catch (err) {
-      console.error(err)
+      console.error(
+        "SETTINGS LOAD ERROR:",
+        err
+      )
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not load Settings."
       )
     } finally {
@@ -147,7 +179,10 @@ export default function SettingsPage() {
       return
     }
 
-    if (admin.role !== "SUPER_ADMIN") {
+    if (
+      admin.role !==
+      "SUPER_ADMIN"
+    ) {
       setError(
         "Only a SUPER_ADMIN can manage Settings."
       )
@@ -159,29 +194,14 @@ export default function SettingsPage() {
     setMessage("")
 
     try {
-      const {
-        data: existing,
-        error: lookupError,
-      } = await supabase
-        .from("site_settings")
-        .select("id")
-        .limit(1)
-        .maybeSingle()
-
-      if (lookupError) {
-        throw new Error(
-          `Could not find site settings: ${lookupError.message}`
-        )
-      }
-
       const payload = {
         site_name:
           form.site_name.trim() ||
-          "THE INDEX",
+          DEFAULT_SETTINGS.site_name,
 
         tagline:
           form.tagline.trim() ||
-          null,
+          DEFAULT_SETTINGS.tagline,
 
         blog_description:
           form.blog_description.trim() ||
@@ -199,7 +219,7 @@ export default function SettingsPage() {
           form.site_url
             .trim()
             .replace(/\/+$/, "") ||
-          "https://theindexpublic.vercel.app",
+          DEFAULT_SETTINGS.site_url,
 
         logo_url:
           form.logo_url.trim() ||
@@ -214,41 +234,132 @@ export default function SettingsPage() {
           null,
       }
 
-      if (existing?.id) {
+      let savedId = settingsId
+
+      if (savedId) {
         const {
+          data,
           error: updateError,
         } = await supabase
           .from("site_settings")
           .update(payload)
-          .eq("id", existing.id)
+          .eq("id", savedId)
+          .select(
+            "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
+          )
+          .single()
 
         if (updateError) {
           throw new Error(
             `Could not save Settings: ${updateError.message}`
           )
         }
+
+        savedId = data.id
+
+        setForm({
+          site_name:
+            data.site_name ??
+            DEFAULT_SETTINGS.site_name,
+
+          tagline:
+            data.tagline ??
+            DEFAULT_SETTINGS.tagline,
+
+          blog_description:
+            data.blog_description ??
+            "",
+
+          meta_description:
+            data.meta_description ??
+            "",
+
+          default_seo_title:
+            data.default_seo_title ??
+            "",
+
+          site_url:
+            data.site_url ??
+            DEFAULT_SETTINGS.site_url,
+
+          logo_url:
+            data.logo_url ?? "",
+
+          favicon_url:
+            data.favicon_url ?? "",
+
+          social_image_url:
+            data.social_image_url ?? "",
+        })
       } else {
         const {
+          data,
           error: insertError,
         } = await supabase
           .from("site_settings")
           .insert(payload)
+          .select(
+            "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
+          )
+          .single()
 
         if (insertError) {
           throw new Error(
             `Could not create Settings: ${insertError.message}`
           )
         }
+
+        savedId = data.id
+
+        setForm({
+          site_name:
+            data.site_name ??
+            DEFAULT_SETTINGS.site_name,
+
+          tagline:
+            data.tagline ??
+            DEFAULT_SETTINGS.tagline,
+
+          blog_description:
+            data.blog_description ??
+            "",
+
+          meta_description:
+            data.meta_description ??
+            "",
+
+          default_seo_title:
+            data.default_seo_title ??
+            "",
+
+          site_url:
+            data.site_url ??
+            DEFAULT_SETTINGS.site_url,
+
+          logo_url:
+            data.logo_url ?? "",
+
+          favicon_url:
+            data.favicon_url ?? "",
+
+          social_image_url:
+            data.social_image_url ?? "",
+        })
       }
+
+      setSettingsId(savedId)
 
       setMessage(
         "Settings saved successfully."
       )
     } catch (err) {
-      console.error(err)
+      console.error(
+        "SETTINGS SAVE ERROR:",
+        err
+      )
 
       setError(
-        err.message ||
+        err?.message ||
           "Could not save Settings."
       )
     } finally {
@@ -266,6 +377,27 @@ export default function SettingsPage() {
         }}
       >
         <p>Loading Settings…</p>
+      </main>
+    )
+  }
+
+  if (error && !admin) {
+    return (
+      <main
+        style={{
+          maxWidth: "900px",
+          margin: "0 auto",
+          padding: "24px 16px 60px",
+        }}
+      >
+        <div
+          className="card"
+          style={{
+            color: "#b00020",
+          }}
+        >
+          {error}
+        </div>
       </main>
     )
   }
@@ -288,7 +420,8 @@ export default function SettingsPage() {
         </h1>
 
         <p className="muted">
-          Manage THE INDEX website and SEO configuration.
+          Manage THE INDEX website,
+          branding and SEO configuration.
         </p>
       </div>
 
@@ -326,9 +459,12 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>Site Name</strong>
+          <strong>
+            Site Name
+          </strong>
 
           <input
+            className="input"
             value={form.site_name}
             onChange={(event) =>
               updateField(
@@ -349,9 +485,12 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>Tagline</strong>
+          <strong>
+            Tagline
+          </strong>
 
           <input
+            className="input"
             value={form.tagline}
             onChange={(event) =>
               updateField(
@@ -377,7 +516,10 @@ export default function SettingsPage() {
           </strong>
 
           <textarea
-            value={form.blog_description}
+            className="input"
+            value={
+              form.blog_description
+            }
             onChange={(event) =>
               updateField(
                 "blog_description",
@@ -403,6 +545,7 @@ export default function SettingsPage() {
           </strong>
 
           <input
+            className="input"
             value={form.site_url}
             onChange={(event) =>
               updateField(
@@ -449,7 +592,10 @@ export default function SettingsPage() {
           </strong>
 
           <input
-            value={form.default_seo_title}
+            className="input"
+            value={
+              form.default_seo_title
+            }
             onChange={(event) =>
               updateField(
                 "default_seo_title",
@@ -474,7 +620,10 @@ export default function SettingsPage() {
           </strong>
 
           <textarea
-            value={form.meta_description}
+            className="input"
+            value={
+              form.meta_description
+            }
             onChange={(event) =>
               updateField(
                 "meta_description",
@@ -506,9 +655,12 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>Logo URL</strong>
+          <strong>
+            Logo URL
+          </strong>
 
           <input
+            className="input"
             value={form.logo_url}
             onChange={(event) =>
               updateField(
@@ -534,7 +686,10 @@ export default function SettingsPage() {
           </strong>
 
           <input
-            value={form.favicon_url}
+            className="input"
+            value={
+              form.favicon_url
+            }
             onChange={(event) =>
               updateField(
                 "favicon_url",
@@ -559,7 +714,10 @@ export default function SettingsPage() {
           </strong>
 
           <input
-            value={form.social_image_url}
+            className="input"
+            value={
+              form.social_image_url
+            }
             onChange={(event) =>
               updateField(
                 "social_image_url",
