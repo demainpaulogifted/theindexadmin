@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase"
 const links = [
   ["/dashboard", "Dashboard"],
   ["/articles", "Articles"],
+  ["/pages", "Pages"],
   ["/submissions", "Submissions"],
   ["/businesses", "Businesses"],
   ["/ads", "Advertising"],
@@ -257,4 +258,4 @@ export default function AdminShell({ children }) {
       </section>
     </div>
   )
-            }
+}
