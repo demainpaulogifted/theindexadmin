@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import ArticleEditor from "@/components/ArticleEditor"
 
 const EMPTY_FORM = {
   title: "",
@@ -46,21 +45,17 @@ export default function ArticlesPage() {
   const [newCategoryName, setNewCategoryName] = useState("")
   const [creatingCategory, setCreatingCategory] = useState(false)
 
-  const isSuperAdmin =
-    admin?.role === "SUPER_ADMIN"
+  const isSuperAdmin = admin?.role === "SUPER_ADMIN"
 
   const filteredCategories = useMemo(() => {
-    const query =
-      categorySearch.trim().toLowerCase()
+    const query = categorySearch.trim().toLowerCase()
 
     if (!query) {
       return categories
     }
 
     return categories.filter((category) =>
-      category.name
-        .toLowerCase()
-        .includes(query)
+      category.name.toLowerCase().includes(query)
     )
   }, [categories, categorySearch])
 
@@ -72,19 +67,13 @@ export default function ArticlesPage() {
 
     if (userError || !user) {
       throw new Error(
-        userError?.message ||
-          "Authentication session missing."
+        userError?.message || "Authentication session missing."
       )
     }
 
-    const {
-      data,
-      error: adminError,
-    } = await supabase
+    const { data, error: adminError } = await supabase
       .from("admin_users")
-      .select(
-        "id,user_id,role,active"
-      )
+      .select("id,user_id,role,active")
       .eq("user_id", user.id)
       .eq("active", true)
       .maybeSingle()
@@ -96,9 +85,7 @@ export default function ArticlesPage() {
     }
 
     if (!data) {
-      throw new Error(
-        "No active admin record found."
-      )
+      throw new Error("No active admin record found.")
     }
 
     const currentAdmin = {
@@ -112,10 +99,7 @@ export default function ArticlesPage() {
   }
 
   async function loadArticles() {
-    const {
-      data,
-      error: postsError,
-    } = await supabase
+    const { data, error: postsError } = await supabase
       .from("posts")
       .select(
         [
@@ -137,9 +121,7 @@ export default function ArticlesPage() {
           "updated_at",
         ].join(",")
       )
-      .order("updated_at", {
-        ascending: false,
-      })
+      .order("updated_at", { ascending: false })
 
     if (postsError) {
       throw new Error(
@@ -156,14 +138,9 @@ export default function ArticlesPage() {
       return
     }
 
-    const {
-      data: relations,
-      error: relationError,
-    } = await supabase
+    const { data: relations, error: relationError } = await supabase
       .from("post_categories")
-      .select(
-        "post_id,category_id"
-      )
+      .select("post_id,category_id")
       .in(
         "post_id",
         rows.map((row) => row.id)
@@ -182,26 +159,17 @@ export default function ArticlesPage() {
         lookup[relation.post_id] = []
       }
 
-      lookup[relation.post_id].push(
-        relation.category_id
-      )
+      lookup[relation.post_id].push(relation.category_id)
     }
 
     setCategoryByPost(lookup)
   }
 
   async function loadCategories() {
-    const {
-      data,
-      error: categoriesError,
-    } = await supabase
+    const { data, error: categoriesError } = await supabase
       .from("categories")
-      .select(
-        "id,name,slug,parent_id,description"
-      )
-      .order("name", {
-        ascending: true,
-      })
+      .select("id,name,slug,parent_id,description")
+      .order("name", { ascending: true })
 
     if (categoriesError) {
       throw new Error(
@@ -227,8 +195,7 @@ export default function ArticlesPage() {
       console.error(err)
 
       setError(
-        err.message ||
-          "Could not load Articles."
+        err.message || "Could not load Articles."
       )
     } finally {
       setLoading(false)
@@ -241,7 +208,10 @@ export default function ArticlesPage() {
 
   function resetEditor() {
     setEditingId(null)
-    setForm(EMPTY_FORM)
+    setForm({
+      ...EMPTY_FORM,
+      category_ids: [],
+    })
     setCategorySearch("")
     setNewCategoryName("")
   }
@@ -263,21 +233,13 @@ export default function ArticlesPage() {
       title: article.title || "",
       slug: article.slug || "",
       excerpt: article.excerpt || "",
-      content_html:
-        article.content_html || "",
-      featured_image:
-        article.featured_image || "",
-      seo_title:
-        article.seo_title || "",
-      meta_description:
-        article.meta_description || "",
-      canonical_url:
-        article.canonical_url || "",
-      no_index:
-        Boolean(article.no_index),
-      category_ids: [
-        ...existingCategoryIds,
-      ],
+      content_html: article.content_html || "",
+      featured_image: article.featured_image || "",
+      seo_title: article.seo_title || "",
+      meta_description: article.meta_description || "",
+      canonical_url: article.canonical_url || "",
+      no_index: Boolean(article.no_index),
+      category_ids: [...existingCategoryIds],
     })
 
     setMessage("")
@@ -296,35 +258,23 @@ export default function ArticlesPage() {
 
   function toggleCategory(categoryId) {
     setForm((current) => {
-      const currentIds =
-        current.category_ids || []
-
-      const alreadySelected =
-        currentIds.includes(categoryId)
+      const currentIds = current.category_ids || []
+      const alreadySelected = currentIds.includes(categoryId)
 
       return {
         ...current,
-        category_ids:
-          alreadySelected
-            ? currentIds.filter(
-                (id) => id !== categoryId
-              )
-            : [
-                ...currentIds,
-                categoryId,
-              ],
+        category_ids: alreadySelected
+          ? currentIds.filter((id) => id !== categoryId)
+          : [...currentIds, categoryId],
       }
     })
   }
 
   async function createCategory() {
-    const name =
-      newCategoryName.trim()
+    const name = newCategoryName.trim()
 
     if (!name) {
-      setError(
-        "Enter a category name first."
-      )
+      setError("Enter a category name first.")
       return
     }
 
@@ -341,16 +291,12 @@ export default function ArticlesPage() {
         )
       }
 
-      const {
-        data: existing,
-        error: existingError,
-      } = await supabase
-        .from("categories")
-        .select(
-          "id,name,slug,parent_id,description"
-        )
-        .eq("slug", slug)
-        .maybeSingle()
+      const { data: existing, error: existingError } =
+        await supabase
+          .from("categories")
+          .select("id,name,slug,parent_id,description")
+          .eq("slug", slug)
+          .maybeSingle()
 
       if (existingError) {
         throw new Error(
@@ -361,19 +307,15 @@ export default function ArticlesPage() {
       let category = existing
 
       if (!category) {
-        const {
-          data: created,
-          error: createError,
-        } = await supabase
-          .from("categories")
-          .insert({
-            name,
-            slug,
-          })
-          .select(
-            "id,name,slug,parent_id,description"
-          )
-          .single()
+        const { data: created, error: createError } =
+          await supabase
+            .from("categories")
+            .insert({
+              name,
+              slug,
+            })
+            .select("id,name,slug,parent_id,description")
+            .single()
 
         if (createError) {
           throw new Error(
@@ -386,19 +328,15 @@ export default function ArticlesPage() {
 
       setCategories((current) => {
         const exists = current.some(
-          (item) =>
-            item.id === category.id
+          (item) => item.id === category.id
         )
 
         if (exists) {
           return current
         }
 
-        return [...current, category].sort(
-          (a, b) =>
-            a.name.localeCompare(
-              b.name
-            )
+        return [...current, category].sort((a, b) =>
+          a.name.localeCompare(b.name)
         )
       })
 
@@ -424,319 +362,446 @@ export default function ArticlesPage() {
       console.error(err)
 
       setError(
-        err.message ||
-          "Could not create category."
+        err.message || "Could not create category."
       )
     } finally {
       setCreatingCategory(false)
     }
-  }
+  }  async function saveCategories(postId, categoryIds) {
+    const { error: deleteError } = await supabase
+      .from("post_categories")
+      .delete()
+      .eq("post_id", postId)
 
-  async function writeAuditLog(
-    action,
-    entityType = null,
-    entityId = null,
-    details = null
-  ) {
-    const { error } = await supabase.rpc(
-      "write_audit_log",
-      {
-        p_action: action,
-        p_entity_type: entityType,
-        p_entity_id: entityId,
-        p_details: details,
-      }
-    )
-
-    if (error) {
-      console.error(
-        "Audit log failed:",
-        error
+    if (deleteError) {
+      throw new Error(
+        `Could not update article categories: ${deleteError.message}`
       )
     }
-  }          <aside className="card">
-            <h2 className="h2">
-              Publishing
-            </h2>
 
-            <p
-              className="muted"
-              style={{
-                marginTop: "8px",
-              }}
-            >
-              Role:{" "}
-              <strong>
-                {admin?.role}
-              </strong>
-            </p>
+    const ids = [...new Set(categoryIds || [])]
 
-            <div
-              style={{
-                marginTop: "20px",
-              }}
-            >
-              <label>
-                Categories
-              </label>
+    if (!ids.length) {
+      return
+    }
 
-              <input
-                className="input"
-                style={{
-                  marginTop: "8px",
-                }}
-                value={categorySearch}
-                onChange={(event) =>
-                  setCategorySearch(
-                    event.target.value
-                  )
-                }
-                placeholder="Search categories..."
-              />
+    const rows = ids.map((categoryId) => ({
+      post_id: postId,
+      category_id: categoryId,
+    }))
 
-              <div
-                style={{
-                  marginTop: "10px",
-                  border: "1px solid #ddd",
-                  borderRadius: "12px",
-                  padding: "10px",
-                  maxHeight: "250px",
-                  overflowY: "auto",
-                }}
-              >
-                {filteredCategories.length === 0 ? (
-                  <p
-                    className="muted"
-                    style={{
-                      margin: 0,
-                    }}
-                  >
-                    No categories found.
-                  </p>
-                ) : (
-                  filteredCategories.map(
-                    (category) => {
-                      const selected = (
-                        form.category_ids || []
-                      ).includes(category.id)
+    const { error: insertError } = await supabase
+      .from("post_categories")
+      .insert(rows)
 
-                      return (
-                        <label
-                          key={category.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            padding: "8px 4px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() =>
-                              toggleCategory(
-                                category.id
-                              )
-                            }
-                          />
+    if (insertError) {
+      throw new Error(
+        `Could not save article categories: ${insertError.message}`
+      )
+    }
+  }
 
-                          <span>
-                            {category.name}
-                          </span>
-                        </label>
-                      )
-                    }
-                  )
-                )}
-              </div>
+  async function saveArticle(status) {
+    if (!admin) {
+      setError("Admin account has not loaded.")
+      return
+    }
 
-              <p
-                className="muted"
-                style={{
-                  marginTop: "8px",
-                  fontSize: "13px",
-                }}
-              >
-                Selected:{" "}
-                {(form.category_ids || []).length}
-              </p>
+    if (!isSuperAdmin && status === "PUBLISHED") {
+      setError(
+        "Only a SUPER_ADMIN can publish an article."
+      )
+      return
+    }
 
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginTop: "12px",
-                }}
-              >
-                <input
-                  className="input"
-                  value={newCategoryName}
-                  onChange={(event) =>
-                    setNewCategoryName(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Create new category..."
-                />
+    setSaving(true)
+    setMessage("")
+    setError("")
 
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={createCategory}
-                  disabled={creatingCategory}
-                >
-                  {creatingCategory
-                    ? "Creating..."
-                    : "+ Create"}
-                </button>
-              </div>
-            </div>
+    try {
+      const title = form.title.trim()
+      const slug = form.slug.trim() || makeSlug(title)
 
-            <button
-              className="btn"
-              style={{
-                marginTop: "20px",
-                width: "100%",
-              }}
-              disabled={saving}
-              onClick={() =>
-                saveArticle("DRAFT")
-              }
-            >
-              {saving
-                ? "Saving..."
-                : "Save Draft"}
-            </button>
+      if (!title) {
+        throw new Error("Article title is required.")
+      }
 
-            {isSuperAdmin && (
-              <button
-                className="btn primary"
-                style={{
-                  marginTop: "10px",
-                  width: "100%",
-                }}
-                disabled={saving}
-                onClick={() =>
-                  saveArticle("PUBLISHED")
-                }
-              >
-                {saving
-                  ? "Publishing..."
-                  : "Publish Article"}
-              </button>
-            )}
+      if (!slug) {
+        throw new Error("Article slug is required.")
+      }
 
-            {!isSuperAdmin && (
-              <p
-                className="muted"
-                style={{
-                  marginTop: "12px",
-                  fontSize: "13px",
-                }}
-              >
-                Contributors can write and save
-                articles as drafts. Only a
-                SUPER_ADMIN can publish.
-              </p>
-            )}
+      const now = new Date().toISOString()
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
-              SEO
-            </h2>
+      const payload = {
+        title,
+        slug,
+        excerpt: form.excerpt.trim() || null,
+        content_html: form.content_html || "",
+        featured_image:
+          form.featured_image.trim() || null,
+        status,
+        published_at:
+          status === "PUBLISHED" ? now : null,
+        seo_title:
+          form.seo_title.trim() || null,
+        meta_description:
+          form.meta_description.trim() || null,
+        canonical_url:
+          form.canonical_url.trim() || null,
+        no_index: Boolean(form.no_index),
+        updated_at: now,
+      }
 
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              SEO Title
-            </label>
+      let saved
 
-            <input
-              className="input"
-              value={form.seo_title}
-              onChange={(event) =>
-                updateField(
-                  "seo_title",
-                  event.target.value
-                )
-              }
-            />
+      if (editingId) {
+        const { data, error: updateError } =
+          await supabase
+            .from("posts")
+            .update(payload)
+            .eq("id", editingId)
+            .select()
+            .single()
 
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              Meta Description
-            </label>
+        if (updateError) {
+          throw new Error(
+            `Could not update article: ${updateError.message}`
+          )
+        }
 
-            <textarea
-              className="input"
-              rows="5"
-              value={form.meta_description}
-              onChange={(event) =>
-                updateField(
-                  "meta_description",
-                  event.target.value
-                )
-              }
-            />
+        saved = data
+      } else {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser()
 
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              Canonical URL
-            </label>
+        if (!user) {
+          throw new Error(
+            "Authentication session missing."
+          )
+        }
 
-            <input
-              className="input"
-              value={form.canonical_url}
-              onChange={(event) =>
-                updateField(
-                  "canonical_url",
-                  event.target.value
-                )
-              }
-              placeholder="https://..."
-            />
+        const { data, error: insertError } =
+          await supabase
+            .from("posts")
+            .insert({
+              ...payload,
+              author_id: user.id,
+            })
+            .select()
+            .single()
 
-            <label
-              style={{
-                marginTop: "16px",
-                display: "flex",
-                gap: "8px",
-                alignItems: "center",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.no_index}
-                onChange={(event) =>
-                  updateField(
-                    "no_index",
-                    event.target.checked
-                  )
-                }
-              />
+        if (insertError) {
+          throw new Error(
+            `Could not create article: ${insertError.message}`
+          )
+        }
 
-              Hide from search engines
-            </label>
-          </aside>
+        saved = data
+      }
+
+      if (saved?.id) {
+        await saveCategories(
+          saved.id,
+          form.category_ids
+        )
+      }
+
+      setMessage(
+        status === "PUBLISHED"
+          ? "Article published successfully."
+          : "Article saved successfully."
+      )
+
+      setShowEditor(false)
+      resetEditor()
+
+      await loadArticles()
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err.message || "Could not save article."
+      )
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function deleteArticle(id) {
+    if (!isSuperAdmin) {
+      setError(
+        "Only a SUPER_ADMIN can delete articles."
+      )
+      return
+    }
+
+    if (
+      !window.confirm(
+        "Delete this article permanently?"
+      )
+    ) {
+      return
+    }
+
+    setError("")
+    setMessage("")
+
+    try {
+      const { error: relationError } =
+        await supabase
+          .from("post_categories")
+          .delete()
+          .eq("post_id", id)
+
+      if (relationError) {
+        throw new Error(
+          `Could not remove article categories: ${relationError.message}`
+        )
+      }
+
+      const { error: postError } =
+        await supabase
+          .from("posts")
+          .delete()
+          .eq("id", id)
+
+      if (postError) {
+        throw new Error(
+          `Could not delete article: ${postError.message}`
+        )
+      }
+
+      setMessage("Article deleted.")
+
+      await loadArticles()
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err.message || "Could not delete article."
+      )
+    }
+  }
+
+  function getCategoryNames(articleId) {
+    const ids = categoryByPost[articleId] || []
+
+    return ids
+      .map((id) => {
+        const category = categories.find(
+          (item) => item.id === id
+        )
+
+        return category?.name
+      })
+      .filter(Boolean)
+  }
+
+  if (loading) {
+    return (
+      <main
+        style={{
+          minHeight: "60vh",
+          display: "grid",
+          placeItems: "center",
+        }}
+      >
+        <p>Loading Articles…</p>
+      </main>
+    )
+  }
+
+  if (error && !showEditor && !articles.length) {
+    return (
+      <main>
+        <div
+          className="card"
+          style={{
+            color: "#b00020",
+          }}
+        >
+          {error}
         </div>
       </main>
     )
   }
 
-  return (
+  if (showEditor) {
+    return (
+      <main>
+        <div className="row spread">
+          <div>
+            <h1 className="h1">
+              {editingId
+                ? "Edit Article"
+                : "New Article"}
+            </h1>
+
+            <p className="muted">
+              Signed in as {admin?.email}
+            </p>
+          </div>
+
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              setShowEditor(false)
+              resetEditor()
+              setMessage("")
+              setError("")
+            }}
+          >
+            Back
+          </button>
+        </div>
+
+        {message && (
+          <div
+            className="card"
+            style={{
+              marginTop: "18px",
+            }}
+          >
+            {message}
+          </div>
+        )}
+
+        {error && (
+          <div
+            className="card"
+            style={{
+              marginTop: "18px",
+              color: "#b00020",
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        <div
+          className="grid grid3"
+          style={{
+            marginTop: "18px",
+          }}
+        >
+          <section
+            className="card"
+            style={{
+              gridColumn: "span 2",
+            }}
+          >
+            <label>
+              Title
+            </label>
+
+            <input
+              className="input"
+              value={form.title}
+              onChange={(event) =>
+                updateField(
+                  "title",
+                  event.target.value
+                )
+              }
+              onBlur={() => {
+                if (!editingId && !form.slug) {
+                  updateField(
+                    "slug",
+                    makeSlug(form.title)
+                  )
+                }
+              }}
+              placeholder="Article title"
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Slug
+            </label>
+
+            <input
+              className="input"
+              value={form.slug}
+              onChange={(event) =>
+                updateField(
+                  "slug",
+                  makeSlug(event.target.value)
+                )
+              }
+              placeholder="article-slug"
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Excerpt
+            </label>
+
+            <textarea
+              className="input"
+              rows="4"
+              value={form.excerpt}
+              onChange={(event) =>
+                updateField(
+                  "excerpt",
+                  event.target.value
+                )
+              }
+              placeholder="Short article summary"
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Article Content
+            </label>
+
+            <textarea
+              className="input"
+              rows="20"
+              value={form.content_html}
+              onChange={(event) =>
+                updateField(
+                  "content_html",
+                  event.target.value
+                )
+              }
+              placeholder="Write your article here. HTML is supported."
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Featured Image URL
+            </label>
+
+            <input
+              className="input"
+              value={form.featured_image}
+              onChange={(event) =>
+                updateField(
+                  "featured_image",
+                  event.target.value
+                )
+              }
+              placeholder="https://..."
+            />
+          </section>return (
     <main>
       <div className="row spread">
         <div>
@@ -793,8 +858,8 @@ export default function ArticlesPage() {
             </h2>
 
             <p className="muted">
-              Create your first article using
-              the button above.
+              Create your first article using the
+              button above.
             </p>
           </div>
         ) : (
@@ -805,15 +870,13 @@ export default function ArticlesPage() {
             }}
           >
             {articles.map((article) => {
-              const names =
-                getCategoryNames(article.id)
+              const names = getCategoryNames(article.id)
 
               return (
                 <article
                   key={article.id}
                   style={{
-                    border:
-                      "1px solid #e5e5e5",
+                    border: "1px solid #e5e5e5",
                     borderRadius: "14px",
                     padding: "16px",
                   }}
@@ -852,12 +915,9 @@ export default function ArticlesPage() {
                       >
                         <span
                           style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 9px",
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "4px 9px",
                             fontSize: "12px",
                           }}
                         >
@@ -868,12 +928,9 @@ export default function ArticlesPage() {
                           <span
                             key={name}
                             style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "4px 9px",
+                              border: "1px solid #ddd",
+                              borderRadius: "999px",
+                              padding: "4px 9px",
                               fontSize: "12px",
                             }}
                           >
@@ -888,8 +945,7 @@ export default function ArticlesPage() {
                         display: "flex",
                         gap: "8px",
                         flexWrap: "wrap",
-                        justifyContent:
-                          "flex-end",
+                        justifyContent: "flex-end",
                       }}
                     >
                       <button
@@ -905,9 +961,7 @@ export default function ArticlesPage() {
                         <button
                           className="btn"
                           onClick={() =>
-                            deleteArticle(
-                              article.id
-                            )
+                            deleteArticle(article.id)
                           }
                         >
                           Delete
