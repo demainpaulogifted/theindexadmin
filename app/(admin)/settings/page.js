@@ -19,7 +19,7 @@ export default function SettingsPage() {
     site_url: "https://theindexpublic.vercel.app",
     logo_url: "",
     favicon_url: "",
-    social_image: "",
+    social_image_url: "",
   })
 
   useEffect(() => {
