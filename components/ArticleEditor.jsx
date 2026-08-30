@@ -1,8 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { supabase } from "@/lib/supabase"
-import ArticleEditor from "@/components/ArticleEditor"
 
 const EMPTY_FORM = {
   title: "",
@@ -26,25 +25,74 @@ function makeSlug(value) {
     .replace(/-+/g, "-")
 }
 
-export default function ArticlesPage() {
-  const [articles, setArticles] = useState([])
-  const [categories, setCategories] = useState([])
-  const [categoryByPost, setCategoryByPost] = useState({})
-  const [admin, setAdmin] = useState(null)
+function getPublicSiteUrl() {
+  const value =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.NEXT_PUBLIC_PUBLIC_SITE_URL ||
+    ""
 
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [editingId, setEditingId] = useState(null)
+  return value.replace(/\/+$/, "")
+}
 
-  const [showEditor, setShowEditor] = useState(false)
-  const [loading, setLoading] = useState(true)
+function buildCanonicalUrl(slug) {
+  const baseUrl = getPublicSiteUrl()
+
+  if (!baseUrl || !slug) {
+    return ""
+  }
+
+  return `${baseUrl}/articles/${slug}`
+}
+
+export default function ArticleEditor({
+  initialArticle = null,
+  initialCategoryIds = [],
+  categories = [],
+  admin = null,
+  onSaved,
+  onCancel,
+}) {
+  const [form, setForm] = useState({
+    ...EMPTY_FORM,
+    ...(initialArticle
+      ? {
+          title: initialArticle.title || "",
+          slug: initialArticle.slug || "",
+          excerpt: initialArticle.excerpt || "",
+          content_html:
+            initialArticle.content_html || "",
+          featured_image:
+            initialArticle.featured_image || "",
+          seo_title:
+            initialArticle.seo_title || "",
+          meta_description:
+            initialArticle.meta_description || "",
+          canonical_url:
+            initialArticle.canonical_url || "",
+          no_index:
+            Boolean(initialArticle.no_index),
+          category_ids: [
+            ...initialCategoryIds,
+          ],
+        }
+      : {}),
+  })
+
   const [saving, setSaving] = useState(false)
+  const [uploadingFeatured, setUploadingFeatured] =
+    useState(false)
+  const [uploadingContentImage, setUploadingContentImage] =
+    useState(false)
 
-  const [message, setMessage] = useState("")
   const [error, setError] = useState("")
-
+  const [message, setMessage] = useState("")
   const [categorySearch, setCategorySearch] = useState("")
   const [newCategoryName, setNewCategoryName] = useState("")
   const [creatingCategory, setCreatingCategory] = useState(false)
+
+  const contentRef = useRef(null)
+  const featuredImageRef = useRef(null)
+  const contentImageRef = useRef(null)
 
   const isSuperAdmin =
     admin?.role === "SUPER_ADMIN"
@@ -64,228 +112,33 @@ export default function ArticlesPage() {
     )
   }, [categories, categorySearch])
 
-  async function loadAdmin() {
-    const {
-      data: { user },
-      error: userError,
-    } = await supabase.auth.getUser()
+  useEffect(() => {
+    const slug = form.slug.trim()
 
-    if (userError || !user) {
-      throw new Error(
-        userError?.message ||
-          "Authentication session missing."
-      )
-    }
-
-    const {
-      data,
-      error: adminError,
-    } = await supabase
-      .from("admin_users")
-      .select(
-        "id,user_id,role,active"
-      )
-      .eq("user_id", user.id)
-      .eq("active", true)
-      .maybeSingle()
-
-    if (adminError) {
-      throw new Error(
-        `Admin authorization failed: ${adminError.message}`
-      )
-    }
-
-    if (!data) {
-      throw new Error(
-        "No active admin record found."
-      )
-    }
-
-    const currentAdmin = {
-      ...data,
-      email: user.email,
-    }
-
-    setAdmin(currentAdmin)
-
-    return currentAdmin
-  }
-
-  async function loadArticles() {
-    const {
-      data,
-      error: postsError,
-    } = await supabase
-      .from("posts")
-      .select(
-        [
-          "id",
-          "title",
-          "slug",
-          "excerpt",
-          "content_html",
-          "featured_image",
-          "status",
-          "published_at",
-          "scheduled_at",
-          "seo_title",
-          "meta_description",
-          "canonical_url",
-          "no_index",
-          "author_id",
-          "created_at",
-          "updated_at",
-        ].join(",")
-      )
-      .order("updated_at", {
-        ascending: false,
-      })
-
-    if (postsError) {
-      throw new Error(
-        `Could not load articles: ${postsError.message}`
-      )
-    }
-
-    const rows = data || []
-
-    setArticles(rows)
-
-    if (!rows.length) {
-      setCategoryByPost({})
+    if (!slug) {
       return
     }
 
-    const {
-      data: relations,
-      error: relationError,
-    } = await supabase
-      .from("post_categories")
-      .select(
-        "post_id,category_id"
-      )
-      .in(
-        "post_id",
-        rows.map((row) => row.id)
-      )
+    const canonical =
+      buildCanonicalUrl(slug)
 
-    if (relationError) {
-      throw new Error(
-        `Could not load article categories: ${relationError.message}`
-      )
+    if (!canonical) {
+      return
     }
 
-    const lookup = {}
-
-    for (const relation of relations || []) {
-      if (!lookup[relation.post_id]) {
-        lookup[relation.post_id] = []
+    setForm((current) => {
+      if (
+        current.canonical_url === canonical
+      ) {
+        return current
       }
 
-      lookup[relation.post_id].push(
-        relation.category_id
-      )
-    }
-
-    setCategoryByPost(lookup)
-  }
-
-  async function loadCategories() {
-    const {
-      data,
-      error: categoriesError,
-    } = await supabase
-      .from("categories")
-      .select(
-        "id,name,slug,parent_id,description"
-      )
-      .order("name", {
-        ascending: true,
-      })
-
-    if (categoriesError) {
-      throw new Error(
-        `Could not load categories: ${categoriesError.message}`
-      )
-    }
-
-    setCategories(data || [])
-  }
-
-  async function loadData() {
-    setLoading(true)
-    setError("")
-
-    try {
-      await loadAdmin()
-
-      await Promise.all([
-        loadArticles(),
-        loadCategories(),
-      ])
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not load Articles."
-      )
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    loadData()
-  }, [])
-
-  function resetEditor() {
-    setEditingId(null)
-    setForm(EMPTY_FORM)
-    setCategorySearch("")
-    setNewCategoryName("")
-  }
-
-  function openNewArticle() {
-    resetEditor()
-    setMessage("")
-    setError("")
-    setShowEditor(true)
-  }
-
-  function editArticle(article) {
-    const existingCategoryIds =
-      categoryByPost[article.id] || []
-
-    setEditingId(article.id)
-
-    setForm({
-      title: article.title || "",
-      slug: article.slug || "",
-      excerpt: article.excerpt || "",
-      content_html:
-        article.content_html || "",
-      featured_image:
-        article.featured_image || "",
-      seo_title:
-        article.seo_title || "",
-      meta_description:
-        article.meta_description || "",
-      canonical_url:
-        article.canonical_url || "",
-      no_index:
-        Boolean(article.no_index),
-      category_ids: [
-        ...existingCategoryIds,
-      ],
+      return {
+        ...current,
+        canonical_url: canonical,
+      }
     })
-
-    setMessage("")
-    setError("")
-    setCategorySearch("")
-    setNewCategoryName("")
-    setShowEditor(true)
-  }
+  }, [form.slug])
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -294,28 +147,220 @@ export default function ArticlesPage() {
     }))
   }
 
+  function handleTitleChange(value) {
+    setForm((current) => ({
+      ...current,
+      title: value,
+      slug:
+        current.slug &&
+        current.slug !== makeSlug(current.title)
+          ? current.slug
+          : makeSlug(value),
+    }))
+  }
+
   function toggleCategory(categoryId) {
     setForm((current) => {
-      const currentIds =
-        current.category_ids || []
-
-      const alreadySelected =
-        currentIds.includes(categoryId)
+      const ids = current.category_ids || []
 
       return {
         ...current,
-        category_ids:
-          alreadySelected
-            ? currentIds.filter(
-                (id) => id !== categoryId
-              )
-            : [
-                ...currentIds,
-                categoryId,
-              ],
+        category_ids: ids.includes(categoryId)
+          ? ids.filter((id) => id !== categoryId)
+          : [...ids, categoryId],
       }
     })
-  }async function createCategory() {
+  }
+
+  async function uploadImage(file) {
+    if (!file) {
+      return null
+    }
+
+    if (!file.type.startsWith("image/")) {
+      throw new Error(
+        "Please select an image file."
+      )
+    }
+
+    const maxSize =
+      10 * 1024 * 1024
+
+    if (file.size > maxSize) {
+      throw new Error(
+        "Image must be 10MB or smaller."
+      )
+    }
+
+    const extension =
+      file.name.split(".").pop()?.toLowerCase() ||
+      "jpg"
+
+    const fileName =
+      `${crypto.randomUUID()}.${extension}`
+
+    const filePath =
+      `articles/${fileName}`
+
+    const {
+      error: uploadError,
+    } = await supabase.storage
+      .from("article-images")
+      .upload(filePath, file, {
+        cacheControl: "3600",
+        upsert: false,
+      })
+
+    if (uploadError) {
+      throw new Error(
+        `Image upload failed: ${uploadError.message}`
+      )
+    }
+
+    const {
+      data,
+    } = supabase.storage
+      .from("article-images")
+      .getPublicUrl(filePath)
+
+    if (!data?.publicUrl) {
+      throw new Error(
+        "Could not create public image URL."
+      )
+    }
+
+    return data.publicUrl
+  }
+
+  async function handleFeaturedImageChange(
+    event
+  ) {
+    const file =
+      event.target.files?.[0]
+
+    event.target.value = ""
+
+    if (!file) {
+      return
+    }
+
+    setUploadingFeatured(true)
+    setError("")
+    setMessage("")
+
+    try {
+      const url =
+        await uploadImage(file)
+
+      updateField(
+        "featured_image",
+        url
+      )
+
+      setMessage(
+        "Featured image uploaded."
+      )
+    } catch (err) {
+      console.error(err)
+      setError(
+        err.message ||
+          "Could not upload featured image."
+      )
+    } finally {
+      setUploadingFeatured(false)
+    }
+  }
+
+  function insertHtmlAtCursor(html) {
+    const element =
+      contentRef.current
+
+    if (!element) {
+      return
+    }
+
+    element.focus()
+
+    const selection =
+      window.getSelection()
+
+    if (
+      selection &&
+      selection.rangeCount > 0
+    ) {
+      const range =
+        selection.getRangeAt(0)
+
+      range.deleteContents()
+
+      const wrapper =
+        document.createElement("div")
+
+      wrapper.innerHTML = html
+
+      const fragment =
+        document.createDocumentFragment()
+
+      while (wrapper.firstChild) {
+        fragment.appendChild(
+          wrapper.firstChild
+        )
+      }
+
+      range.insertNode(fragment)
+
+      range.collapse(false)
+      selection.removeAllRanges()
+      selection.addRange(range)
+    } else {
+      element.innerHTML += html
+    }
+
+    updateField(
+      "content_html",
+      element.innerHTML
+    )
+  }
+
+  async function handleContentImageChange(
+    event
+  ) {
+    const file =
+      event.target.files?.[0]
+
+    event.target.value = ""
+
+    if (!file) {
+      return
+    }
+
+    setUploadingContentImage(true)
+    setError("")
+    setMessage("")
+
+    try {
+      const url =
+        await uploadImage(file)
+
+      insertHtmlAtCursor(
+        `<p><img src="${url}" alt="" style="max-width:100%;height:auto;" /></p>`
+      )
+
+      setMessage(
+        "Image inserted into article content."
+      )
+    } catch (err) {
+      console.error(err)
+      setError(
+        err.message ||
+          "Could not upload content image."
+      )
+    } finally {
+      setUploadingContentImage(false)
+    }
+  }
+
+  async function createCategory() {
     const name =
       newCategoryName.trim()
 
@@ -331,13 +376,8 @@ export default function ArticlesPage() {
     setMessage("")
 
     try {
-      const slug = makeSlug(name)
-
-      if (!slug) {
-        throw new Error(
-          "That category name cannot create a valid slug."
-        )
-      }
+      const slug =
+        makeSlug(name)
 
       const {
         data: existing,
@@ -352,7 +392,7 @@ export default function ArticlesPage() {
 
       if (existingError) {
         throw new Error(
-          `Could not check category: ${existingError.message}`
+          existingError.message
         )
       }
 
@@ -360,7 +400,7 @@ export default function ArticlesPage() {
 
       if (!category) {
         const {
-          data: created,
+          data,
           error: createError,
         } = await supabase
           .from("categories")
@@ -375,30 +415,12 @@ export default function ArticlesPage() {
 
         if (createError) {
           throw new Error(
-            `Could not create category: ${createError.message}`
+            createError.message
           )
         }
 
-        category = created
+        category = data
       }
-
-      setCategories((current) => {
-        const exists = current.some(
-          (item) =>
-            item.id === category.id
-        )
-
-        if (exists) {
-          return current
-        }
-
-        return [...current, category].sort(
-          (a, b) =>
-            a.name.localeCompare(
-              b.name
-            )
-        )
-      })
 
       setForm((current) => ({
         ...current,
@@ -414,13 +436,10 @@ export default function ArticlesPage() {
       setNewCategoryName("")
 
       setMessage(
-        existing
-          ? `"${category.name}" already existed and was selected.`
-          : `"${category.name}" created and selected.`
+        `"${category.name}" selected.`
       )
     } catch (err) {
       console.error(err)
-
       setError(
         err.message ||
           "Could not create category."
@@ -428,54 +447,7 @@ export default function ArticlesPage() {
     } finally {
       setCreatingCategory(false)
     }
-  }
-
-  async function saveCategories(
-    postId,
-    categoryIds
-  ) {
-    const {
-      error: deleteError,
-    } = await supabase
-      .from("post_categories")
-      .delete()
-      .eq("post_id", postId)
-
-    if (deleteError) {
-      throw new Error(
-        `Could not update article categories: ${deleteError.message}`
-      )
-    }
-
-    const ids = [
-      ...new Set(categoryIds || []),
-    ]
-
-    if (!ids.length) {
-      return
-    }
-
-    const rows = ids.map(
-      (categoryId) => ({
-        post_id: postId,
-        category_id: categoryId,
-      })
-    )
-
-    const {
-      error: insertError,
-    } = await supabase
-      .from("post_categories")
-      .insert(rows)
-
-    if (insertError) {
-      throw new Error(
-        `Could not save article categories: ${insertError.message}`
-      )
-    }
-  }
-
-  async function saveArticle(status) {
+  }async function saveArticle(status) {
     if (!admin) {
       setError(
         "Admin account has not loaded."
@@ -484,8 +456,8 @@ export default function ArticlesPage() {
     }
 
     if (
-      !isSuperAdmin &&
-      status === "PUBLISHED"
+      status === "PUBLISHED" &&
+      !isSuperAdmin
     ) {
       setError(
         "Only a SUPER_ADMIN can publish an article."
@@ -493,32 +465,37 @@ export default function ArticlesPage() {
       return
     }
 
+    const title =
+      form.title.trim()
+
+    const slug =
+      form.slug.trim() ||
+      makeSlug(title)
+
+    if (!title) {
+      setError(
+        "Article title is required."
+      )
+      return
+    }
+
+    if (!slug) {
+      setError(
+        "Article slug is required."
+      )
+      return
+    }
+
     setSaving(true)
-    setMessage("")
     setError("")
+    setMessage("")
 
     try {
-      const title =
-        form.title.trim()
-
-      const slug =
-        form.slug.trim() ||
-        makeSlug(title)
-
-      if (!title) {
-        throw new Error(
-          "Article title is required."
-        )
-      }
-
-      if (!slug) {
-        throw new Error(
-          "Article slug is required."
-        )
-      }
-
       const now =
         new Date().toISOString()
+
+      const canonicalUrl =
+        buildCanonicalUrl(slug)
 
       const payload = {
         title,
@@ -543,6 +520,7 @@ export default function ArticlesPage() {
           form.meta_description.trim() ||
           null,
         canonical_url:
+          canonicalUrl ||
           form.canonical_url.trim() ||
           null,
         no_index:
@@ -552,14 +530,17 @@ export default function ArticlesPage() {
 
       let saved
 
-      if (editingId) {
+      if (initialArticle?.id) {
         const {
           data,
           error: updateError,
         } = await supabase
           .from("posts")
           .update(payload)
-          .eq("id", editingId)
+          .eq(
+            "id",
+            initialArticle.id
+          )
           .select()
           .single()
 
@@ -606,10 +587,49 @@ export default function ArticlesPage() {
       }
 
       if (saved?.id) {
-        await saveCategories(
-          saved.id,
-          form.category_ids
-        )
+        const {
+          error: deleteError,
+        } = await supabase
+          .from("post_categories")
+          .delete()
+          .eq(
+            "post_id",
+            saved.id
+          )
+
+        if (deleteError) {
+          throw new Error(
+            `Could not update article categories: ${deleteError.message}`
+          )
+        }
+
+        const categoryIds = [
+          ...new Set(
+            form.category_ids || []
+          ),
+        ]
+
+        if (categoryIds.length) {
+          const {
+            error: categoryError,
+          } = await supabase
+            .from("post_categories")
+            .insert(
+              categoryIds.map(
+                (categoryId) => ({
+                  post_id: saved.id,
+                  category_id:
+                    categoryId,
+                })
+              )
+            )
+
+          if (categoryError) {
+            throw new Error(
+              `Could not save article categories: ${categoryError.message}`
+            )
+          }
+        }
       }
 
       setMessage(
@@ -618,10 +638,9 @@ export default function ArticlesPage() {
           : "Article saved successfully."
       )
 
-      setShowEditor(false)
-      resetEditor()
-
-      await loadArticles()
+      if (onSaved) {
+        await onSaved(saved)
+      }
     } catch (err) {
       console.error(err)
 
@@ -634,380 +653,541 @@ export default function ArticlesPage() {
     }
   }
 
-  async function deleteArticle(id) {
-    if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can delete articles."
-      )
-      return
-    }
-
-    if (
-      !window.confirm(
-        "Delete this article permanently?"
-      )
-    ) {
-      return
-    }
-
-    setError("")
-    setMessage("")
-
-    try {
-      const {
-        error: relationError,
-      } = await supabase
-        .from("post_categories")
-        .delete()
-        .eq("post_id", id)
-
-      if (relationError) {
-        throw new Error(
-          `Could not remove article categories: ${relationError.message}`
-        )
-      }
-
-      const {
-        error: postError,
-      } = await supabase
-        .from("posts")
-        .delete()
-        .eq("id", id)
-
-      if (postError) {
-        throw new Error(
-          `Could not delete article: ${postError.message}`
-        )
-      }
-
-      setMessage(
-        "Article deleted."
-      )
-
-      await loadArticles()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not delete article."
-      )
-    }
-  }
-
-  function getCategoryNames(articleId) {
-    const ids =
-      categoryByPost[articleId] || []
-
-    return ids
-      .map((id) => {
-        const category =
-          categories.find(
-            (item) =>
-              item.id === id
-          )
-
-        return category?.name
-      })
-      .filter(Boolean)
-  }
-
-  if (loading) {
-    return (
-      <main
+  return (
+    <main
+      style={{
+        maxWidth: "1100px",
+        margin: "0 auto",
+        padding: "24px 16px 60px",
+      }}
+    >
+      <div
         style={{
-          minHeight: "60vh",
-          display: "grid",
-          placeItems: "center",
+          display: "flex",
+          justifyContent:
+            "space-between",
+          alignItems: "center",
+          gap: "16px",
+          marginBottom: "24px",
+          flexWrap: "wrap",
         }}
       >
-        <p>Loading Articles…</p>
-      </main>
-    )
-  }
-
-  if (showEditor) {
-    const editingArticle = editingId
-      ? articles.find(
-          (article) =>
-            article.id === editingId
-        )
-      : null
-
-    return (
-      <ArticleEditor
-        initialArticle={editingArticle}
-        initialCategoryIds={
-          editingId
-            ? categoryByPost[editingId] || []
-            : []
-        }
-        categories={categories}
-        admin={admin}
-        onSaved={async () => {
-          setShowEditor(false)
-          resetEditor()
-          setMessage(
-            "Article saved successfully."
-          )
-          setError("")
-          await loadArticles()
-        }}
-        onCancel={() => {
-          setShowEditor(false)
-          resetEditor()
-          setMessage("")
-          setError("")
-        }}
-      />
-    )
-  }
-
-  return (
-    <main>
-      <div className="row spread">
         <div>
-          <h1 className="h1">
-            Articles
+          <h1
+            style={{
+              margin: 0,
+              fontSize: "30px",
+              fontWeight: 800,
+            }}
+          >
+            {initialArticle
+              ? "Edit Article"
+              : "New Article"}
           </h1>
 
-          <p className="muted">
-            Manage THE INDEX
+          <p
+            style={{
+              margin: "6px 0 0",
+              opacity: 0.65,
+            }}
+          >
+            Create and manage THE INDEX
             editorial content.
           </p>
         </div>
 
         <button
-          className="btn primary"
-          onClick={
-            openNewArticle
-          }
+          type="button"
+          className="btn"
+          onClick={onCancel}
+          disabled={saving}
         >
-          New Article
+          Cancel
         </button>
       </div>
+
+      {error && (
+        <div
+          className="card"
+          style={{
+            marginBottom: "16px",
+            color: "#b00020",
+          }}
+        >
+          {error}
+        </div>
+      )}
 
       {message && (
         <div
           className="card"
           style={{
-            marginTop: "18px",
+            marginBottom: "16px",
           }}
         >
           {message}
         </div>
       )}
 
-      {error && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-            color: "#b00020",
-          }}
-        >
-          {error}
-        </div>
-      )}<div
-        className="card"
+      <div
         style={{
-          marginTop: "18px",
+          display: "grid",
+          gap: "20px",
         }}
       >
-        {articles.length === 0 ? (
-          <div>
-            <h2 className="h2">
-              No articles yet
-            </h2>
+        <section className="card">
+          <label>
+            <strong>Title</strong>
 
-            <p className="muted">
-              Create your first
-              article using the
-              button above.
-            </p>
+            <input
+              value={form.title}
+              onChange={(event) =>
+                handleTitleChange(
+                  event.target.value
+                )
+              }
+              placeholder="Article title"
+              style={{
+                width: "100%",
+                marginTop: "8px",
+              }}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "16px",
+            }}
+          >
+            <strong>Slug</strong>
+
+            <input
+              value={form.slug}
+              onChange={(event) =>
+                updateField(
+                  "slug",
+                  makeSlug(
+                    event.target.value
+                  )
+                )
+              }
+              placeholder="article-slug"
+              style={{
+                width: "100%",
+                marginTop: "8px",
+              }}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "16px",
+            }}
+          >
+            <strong>Excerpt</strong>
+
+            <textarea
+              value={form.excerpt}
+              onChange={(event) =>
+                updateField(
+                  "excerpt",
+                  event.target.value
+                )
+              }
+              rows={4}
+              placeholder="Short article summary"
+              style={{
+                width: "100%",
+                marginTop: "8px",
+              }}
+            />
+          </label>
+        </section>
+
+        <section className="card">
+          <h2 className="h2">
+            Featured Image
+          </h2>
+
+          <input
+            ref={featuredImageRef}
+            type="file"
+            accept="image/*"
+            onChange={
+              handleFeaturedImageChange
+            }
+            style={{
+              display: "none",
+            }}
+          />
+
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              featuredImageRef.current?.click()
+            }
+            disabled={
+              uploadingFeatured ||
+              saving
+            }
+          >
+            {uploadingFeatured
+              ? "Uploading…"
+              : "Upload Featured Image"}
+          </button>
+
+          <input
+            value={form.featured_image}
+            onChange={(event) =>
+              updateField(
+                "featured_image",
+                event.target.value
+              )
+            }
+            placeholder="Or paste image URL"
+            style={{
+              width: "100%",
+              marginTop: "10px",
+            }}
+          />
+
+          {form.featured_image && (
+            <img
+              src={form.featured_image}
+              alt=""
+              style={{
+                display: "block",
+                width: "100%",
+                maxHeight: "360px",
+                objectFit: "cover",
+                borderRadius: "12px",
+                marginTop: "12px",
+              }}
+            />
+          )}
+        </section><section className="card">
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "12px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h2 className="h2">
+                Article Content
+              </h2>
+
+              <p className="muted">
+                Write your article and insert images directly into the content.
+              </p>
+            </div>
+
+            <div>
+              <input
+                ref={contentImageRef}
+                type="file"
+                accept="image/*"
+                onChange={
+                  handleContentImageChange
+                }
+                style={{
+                  display: "none",
+                }}
+              />
+
+              <button
+                type="button"
+                className="btn"
+                onClick={() =>
+                  contentImageRef.current?.click()
+                }
+                disabled={
+                  uploadingContentImage ||
+                  saving
+                }
+              >
+                {uploadingContentImage
+                  ? "Uploading…"
+                  : "Insert Image"}
+              </button>
+            </div>
           </div>
-        ) : (
+
+          <div
+            ref={contentRef}
+            contentEditable
+            suppressContentEditableWarning
+            onInput={(event) =>
+              updateField(
+                "content_html",
+                event.currentTarget.innerHTML
+              )
+            }
+            dangerouslySetInnerHTML={{
+              __html:
+                form.content_html || "",
+            }}
+            style={{
+              minHeight: "400px",
+              border: "1px solid #ddd",
+              borderRadius: "12px",
+              padding: "16px",
+              marginTop: "12px",
+              outline: "none",
+              lineHeight: 1.7,
+            }}
+          />
+        </section>
+
+        <section className="card">
+          <h2 className="h2">
+            Categories
+          </h2>
+
+          <input
+            value={categorySearch}
+            onChange={(event) =>
+              setCategorySearch(
+                event.target.value
+              )
+            }
+            placeholder="Search categories"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+
           <div
             style={{
               display: "grid",
-              gap: "14px",
+              gap: "8px",
+              marginTop: "12px",
             }}
           >
-            {articles.map(
-              (article) => {
-                const names =
-                  getCategoryNames(
-                    article.id
-                  )
-
-                return (
-                  <article
-                    key={
-                      article.id
+            {filteredCategories.map(
+              (category) => (
+                <label
+                  key={category.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={
+                      form.category_ids.includes(
+                        category.id
+                      )
                     }
-                    style={{
-                      border:
-                        "1px solid #e5e5e5",
-                      borderRadius:
-                        "14px",
-                      padding:
-                        "16px",
-                    }}
-                  >
-                    <div
-                      className="row spread"
-                    >
-                      <div
-                        style={{
-                          minWidth: 0,
-                        }}
-                      >
-                        <h2
-                          className="h2"
-                          style={{
-                            margin: 0,
-                          }}
-                        >
-                          {
-                            article.title
-                          }
-                        </h2>
+                    onChange={() =>
+                      toggleCategory(
+                        category.id
+                      )
+                    }
+                  />
 
-                        <p
-                          className="muted"
-                          style={{
-                            marginTop:
-                              "6px",
-                          }}
-                        >
-                          /
-                          {
-                            article.slug
-                          }
-                        </p>
-
-                        <div
-                          style={{
-                            display:
-                              "flex",
-                            flexWrap:
-                              "wrap",
-                            gap: "6px",
-                            marginTop:
-                              "10px",
-                          }}
-                        >
-                          <span
-                            style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "4px 9px",
-                            }}
-                          >
-                            {
-                              article.status
-                            }
-                          </span>
-
-                          {names.map(
-                            (name) => (
-                              <span
-                                key={
-                                  name
-                                }
-                                style={{
-                                  border:
-                                    "1px solid #ddd",
-                                  borderRadius:
-                                    "999px",
-                                  padding:
-                                    "4px 9px",
-                                }}
-                              >
-                                {name}
-                              </span>
-                            )
-                          )}
-                        </div>
-
-                        <p
-                          className="muted"
-                          style={{
-                            marginTop:
-                              "10px",
-                          }}
-                        >
-                          Updated{" "}
-                          {article.updated_at
-                            ? new Date(
-                                article.updated_at
-                              ).toLocaleString()
-                            : "—"}
-                        </p>
-                      </div>
-
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          gap: "8px",
-                          flexWrap:
-                            "wrap",
-                          justifyContent:
-                            "flex-end",
-                        }}
-                      >
-                        <button
-                          className="btn"
-                          onClick={() =>
-                            editArticle(
-                              article
-                            )
-                          }
-                        >
-                          Edit
-                        </button>
-
-                        {isSuperAdmin && (
-                          <button
-                            className="btn"
-                            style={{
-                              color:
-                                "#b00020",
-                            }}
-                            onClick={() =>
-                              deleteArticle(
-                                article.id
-                              )
-                            }
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {article.excerpt && (
-                      <p
-                        style={{
-                          marginTop:
-                            "12px",
-                        }}
-                      >
-                        {
-                          article.excerpt
-                        }
-                      </p>
-                    )}
-                  </article>
-                )
-              }
+                  {category.name}
+                </label>
+              )
             )}
           </div>
-        )}
+
+          <div
+            style={{
+              display: "flex",
+              gap: "8px",
+              marginTop: "16px",
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              value={newCategoryName}
+              onChange={(event) =>
+                setNewCategoryName(
+                  event.target.value
+                )
+              }
+              placeholder="New category name"
+            />
+
+            <button
+              type="button"
+              className="btn"
+              onClick={createCategory}
+              disabled={
+                creatingCategory ||
+                saving
+              }
+            >
+              {creatingCategory
+                ? "Creating…"
+                : "Create Category"}
+            </button>
+          </div>
+        </section>
+
+        <section className="card">
+          <h2 className="h2">
+            SEO
+          </h2>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "12px",
+            }}
+          >
+            <strong>SEO Title</strong>
+
+            <input
+              value={form.seo_title}
+              onChange={(event) =>
+                updateField(
+                  "seo_title",
+                  event.target.value
+                )
+              }
+              placeholder="SEO title"
+              style={{
+                width: "100%",
+                marginTop: "8px",
+              }}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "12px",
+            }}
+          >
+            <strong>
+              Meta Description
+            </strong>
+
+            <textarea
+              value={
+                form.meta_description
+              }
+              onChange={(event) =>
+                updateField(
+                  "meta_description",
+                  event.target.value
+                )
+              }
+              rows={4}
+              placeholder="Search engine description"
+              style={{
+                width: "100%",
+                marginTop: "8px",
+              }}
+            />
+          </label>
+
+          <label
+            style={{
+              display: "block",
+              marginTop: "12px",
+            }}
+          >
+            <strong>
+              Canonical URL
+            </strong>
+
+            <input
+              value={
+                form.canonical_url
+              }
+              readOnly
+              style={{
+                width: "100%",
+                marginTop: "8px",
+                background: "#f5f5f5",
+              }}
+            />
+
+            <small
+              style={{
+                display: "block",
+                marginTop: "6px",
+                opacity: 0.65,
+              }}
+            >
+              Automatically generated from
+              NEXT_PUBLIC_SITE_URL and the
+              article slug.
+            </small>
+          </label>
+
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "8px",
+              marginTop: "16px",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={form.no_index}
+              onChange={(event) =>
+                updateField(
+                  "no_index",
+                  event.target.checked
+                )
+              }
+            />
+
+            Do not index this article
+          </label>
+        </section>
+
+        <section
+          className="card"
+          style={{
+            display: "flex",
+            gap: "10px",
+            justifyContent: "flex-end",
+            flexWrap: "wrap",
+          }}
+        >
+          <button
+            type="button"
+            className="btn"
+            onClick={() =>
+              saveArticle("DRAFT")
+            }
+            disabled={saving}
+          >
+            {saving
+              ? "Saving…"
+              : "Save Draft"}
+          </button>
+
+          {isSuperAdmin && (
+            <button
+              type="button"
+              className="btn primary"
+              onClick={() =>
+                saveArticle("PUBLISHED")
+              }
+              disabled={saving}
+            >
+              {saving
+                ? "Publishing…"
+                : "Publish Article"}
+            </button>
+          )}
+        </section>
       </div>
     </main>
   )
