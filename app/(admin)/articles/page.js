@@ -432,480 +432,29 @@ export default function ArticlesPage() {
     }
   }
 
-  async function saveCategories(
-    postId,
-    categoryIds
+  async function writeAuditLog(
+    action,
+    entityType = null,
+    entityId = null,
+    details = null
   ) {
-    const {
-      error: deleteError,
-    } = await supabase
-      .from("post_categories")
-      .delete()
-      .eq("post_id", postId)
-
-    if (deleteError) {
-      throw new Error(
-        `Could not update article categories: ${deleteError.message}`
-      )
-    }
-
-    const ids = [
-      ...new Set(categoryIds || []),
-    ]
-
-    if (!ids.length) {
-      return
-    }
-
-    const rows = ids.map(
-      (categoryId) => ({
-        post_id: postId,
-        category_id: categoryId,
-      })
+    const { error } = await supabase.rpc(
+      "write_audit_log",
+      {
+        p_action: action,
+        p_entity_type: entityType,
+        p_entity_id: entityId,
+        p_details: details,
+      }
     )
 
-    const {
-      error: insertError,
-    } = await supabase
-      .from("post_categories")
-      .insert(rows)
-
-    if (insertError) {
-      throw new Error(
-        `Could not save article categories: ${insertError.message}`
+    if (error) {
+      console.error(
+        "Audit log failed:",
+        error
       )
     }
-  }
-
-  async function saveArticle(status) {
-    if (!admin) {
-      setError(
-        "Admin account has not loaded."
-      )
-      return
-    }
-
-    if (
-      !isSuperAdmin &&
-      status === "PUBLISHED"
-    ) {
-      setError(
-        "Only a SUPER_ADMIN can publish an article."
-      )
-      return
-    }
-
-    setSaving(true)
-    setMessage("")
-    setError("")
-
-    try {
-      const title =
-        form.title.trim()
-
-      const slug =
-        form.slug.trim() ||
-        makeSlug(title)
-
-      if (!title) {
-        throw new Error(
-          "Article title is required."
-        )
-      }
-
-      if (!slug) {
-        throw new Error(
-          "Article slug is required."
-        )
-      }
-
-      const now =
-        new Date().toISOString()
-
-      const payload = {
-        title,
-        slug,
-        excerpt:
-          form.excerpt.trim() ||
-          null,
-        content_html:
-          form.content_html || "",
-        featured_image:
-          form.featured_image.trim() ||
-          null,
-        status,
-        published_at:
-          status === "PUBLISHED"
-            ? now
-            : null,
-        seo_title:
-          form.seo_title.trim() ||
-          null,
-        meta_description:
-          form.meta_description.trim() ||
-          null,
-        canonical_url:
-          form.canonical_url.trim() ||
-          null,
-        no_index:
-          Boolean(form.no_index),
-        updated_at: now,
-      }
-
-      let saved
-
-      if (editingId) {
-        const {
-          data,
-          error: updateError,
-        } = await supabase
-          .from("posts")
-          .update(payload)
-          .eq("id", editingId)
-          .select()
-          .single()
-
-        if (updateError) {
-          throw new Error(
-            `Could not update article: ${updateError.message}`
-          )
-        }
-
-        saved = data
-      } else {
-        const {
-          data: {
-            user,
-          },
-        } =
-          await supabase.auth.getUser()
-
-        if (!user) {
-          throw new Error(
-            "Authentication session missing."
-          )
-        }
-
-        const {
-          data,
-          error: insertError,
-        } = await supabase
-          .from("posts")
-          .insert({
-            ...payload,
-            author_id: user.id,
-          })
-          .select()
-          .single()
-
-        if (insertError) {
-          throw new Error(
-            `Could not create article: ${insertError.message}`
-          )
-        }
-
-        saved = data
-      }
-
-      if (saved?.id) {
-        await saveCategories(
-          saved.id,
-          form.category_ids
-        )
-      }
-
-      setMessage(
-        status === "PUBLISHED"
-          ? "Article published successfully."
-          : "Article saved successfully."
-      )
-
-      setShowEditor(false)
-      resetEditor()
-
-      await loadArticles()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not save article."
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  async function deleteArticle(id) {
-    if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can delete articles."
-      )
-      return
-    }
-
-    if (
-      !window.confirm(
-        "Delete this article permanently?"
-      )
-    ) {
-      return
-    }
-
-    setError("")
-    setMessage("")
-
-    try {
-      const {
-        error: relationError,
-      } = await supabase
-        .from("post_categories")
-        .delete()
-        .eq("post_id", id)
-
-      if (relationError) {
-        throw new Error(
-          `Could not remove article categories: ${relationError.message}`
-        )
-      }
-
-      const {
-        error: postError,
-      } = await supabase
-        .from("posts")
-        .delete()
-        .eq("id", id)
-
-      if (postError) {
-        throw new Error(
-          `Could not delete article: ${postError.message}`
-        )
-      }
-
-      setMessage(
-        "Article deleted."
-      )
-
-      await loadArticles()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not delete article."
-      )
-    }
-  }  function getCategoryNames(articleId) {
-    const ids =
-      categoryByPost[articleId] || []
-
-    return ids
-      .map((id) => {
-        const category =
-          categories.find(
-            (item) =>
-              item.id === id
-          )
-
-        return category?.name
-      })
-      .filter(Boolean)
-  }
-
-  if (loading) {
-    return (
-      <main
-        style={{
-          minHeight: "60vh",
-          display: "grid",
-          placeItems: "center",
-        }}
-      >
-        <p>Loading Articles…</p>
-      </main>
-    )
-  }
-
-  if (showEditor) {
-    return (
-      <main>
-        <div className="row spread">
-          <div>
-            <h1 className="h1">
-              {editingId
-                ? "Edit Article"
-                : "New Article"}
-            </h1>
-
-            <p className="muted">
-              Signed in as{" "}
-              {admin?.email}
-            </p>
-          </div>
-
-          <button
-            className="btn"
-            onClick={() => {
-              setShowEditor(false)
-              resetEditor()
-            }}
-          >
-            Back
-          </button>
-        </div>
-
-        {message && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-              color: "#b00020",
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <div
-          className="grid grid3"
-          style={{
-            marginTop: "18px",
-          }}
-        >
-          <section
-            className="card"
-            style={{
-              gridColumn:
-                "span 2",
-            }}
-          >
-            <label>
-              Title
-            </label>
-
-            <input
-              className="input"
-              value={form.title}
-              onChange={(event) =>
-                updateField(
-                  "title",
-                  event.target.value
-                )
-              }
-              onBlur={() => {
-                if (!editingId) {
-                  updateField(
-                    "slug",
-                    makeSlug(
-                      form.title
-                    )
-                  )
-                }
-              }}
-              placeholder="Article title"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Slug
-            </label>
-
-            <input
-              className="input"
-              value={form.slug}
-              onChange={(event) =>
-                updateField(
-                  "slug",
-                  makeSlug(
-                    event.target.value
-                  )
-                )
-              }
-              placeholder="article-slug"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Excerpt
-            </label>
-
-            <textarea
-              className="input"
-              rows="4"
-              value={form.excerpt}
-              onChange={(event) =>
-                updateField(
-                  "excerpt",
-                  event.target.value
-                )
-              }
-              placeholder="Short article summary"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Article Content
-            </label>
-
-            <textarea
-              className="input"
-              rows="20"
-              value={
-                form.content_html
-              }
-              onChange={(event) =>
-                updateField(
-                  "content_html",
-                  event.target.value
-                )
-              }
-              placeholder="Write your article here. HTML is supported."
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Featured Image URL
-            </label>
-
-            <input
-              className="input"
-              value={
-                form.featured_image
-              }
-              onChange={(event) =>
-                updateField(
-                  "featured_image",
-                  event.target.value
-                )
-              }
-              placeholder="https://..."
-            />
-          </section>
-
-          <aside className="card">
+  }          <aside className="card">
             <h2 className="h2">
               Publishing
             </h2>
@@ -936,9 +485,7 @@ export default function ArticlesPage() {
                 style={{
                   marginTop: "8px",
                 }}
-                value={
-                  categorySearch
-                }
+                value={categorySearch}
                 onChange={(event) =>
                   setCategorySearch(
                     event.target.value
@@ -950,19 +497,14 @@ export default function ArticlesPage() {
               <div
                 style={{
                   marginTop: "10px",
-                  border:
-                    "1px solid #ddd",
-                  borderRadius:
-                    "12px",
+                  border: "1px solid #ddd",
+                  borderRadius: "12px",
                   padding: "10px",
-                  maxHeight:
-                    "250px",
-                  overflowY:
-                    "auto",
+                  maxHeight: "250px",
+                  overflowY: "auto",
                 }}
               >
-                {filteredCategories.length ===
-                0 ? (
+                {filteredCategories.length === 0 ? (
                   <p
                     className="muted"
                     style={{
@@ -974,36 +516,24 @@ export default function ArticlesPage() {
                 ) : (
                   filteredCategories.map(
                     (category) => {
-                      const selected =
-                        (
-                          form.category_ids ||
-                          []
-                        ).includes(
-                          category.id
-                        )
+                      const selected = (
+                        form.category_ids || []
+                      ).includes(category.id)
 
                       return (
                         <label
-                          key={
-                            category.id
-                          }
+                          key={category.id}
                           style={{
-                            display:
-                              "flex",
-                            alignItems:
-                              "center",
+                            display: "flex",
+                            alignItems: "center",
                             gap: "10px",
-                            padding:
-                              "8px 4px",
-                            cursor:
-                              "pointer",
+                            padding: "8px 4px",
+                            cursor: "pointer",
                           }}
                         >
                           <input
                             type="checkbox"
-                            checked={
-                              selected
-                            }
+                            checked={selected}
                             onChange={() =>
                               toggleCategory(
                                 category.id
@@ -1012,9 +542,7 @@ export default function ArticlesPage() {
                           />
 
                           <span>
-                            {
-                              category.name
-                            }
+                            {category.name}
                           </span>
                         </label>
                       )
@@ -1026,41 +554,27 @@ export default function ArticlesPage() {
               <p
                 className="muted"
                 style={{
-                  marginTop:
-                    "8px",
-                  fontSize:
-                    "13px",
+                  marginTop: "8px",
+                  fontSize: "13px",
                 }}
               >
                 Selected:{" "}
-                {
-                  (
-                    form.category_ids ||
-                    []
-                  ).length
-                }
+                {(form.category_ids || []).length}
               </p>
 
               <div
                 style={{
-                  display:
-                    "flex",
+                  display: "flex",
                   gap: "8px",
-                  marginTop:
-                    "12px",
+                  marginTop: "12px",
                 }}
               >
                 <input
                   className="input"
-                  value={
-                    newCategoryName
-                  }
-                  onChange={(
-                    event
-                  ) =>
+                  value={newCategoryName}
+                  onChange={(event) =>
                     setNewCategoryName(
-                      event.target
-                        .value
+                      event.target.value
                     )
                   }
                   placeholder="Create new category..."
@@ -1069,12 +583,8 @@ export default function ArticlesPage() {
                 <button
                   type="button"
                   className="btn"
-                  onClick={
-                    createCategory
-                  }
-                  disabled={
-                    creatingCategory
-                  }
+                  onClick={createCategory}
+                  disabled={creatingCategory}
                 >
                   {creatingCategory
                     ? "Creating..."
@@ -1091,9 +601,7 @@ export default function ArticlesPage() {
               }}
               disabled={saving}
               onClick={() =>
-                saveArticle(
-                  "DRAFT"
-                )
+                saveArticle("DRAFT")
               }
             >
               {saving
@@ -1110,9 +618,7 @@ export default function ArticlesPage() {
                 }}
                 disabled={saving}
                 onClick={() =>
-                  saveArticle(
-                    "PUBLISHED"
-                  )
+                  saveArticle("PUBLISHED")
                 }
               >
                 {saving
@@ -1125,25 +631,20 @@ export default function ArticlesPage() {
               <p
                 className="muted"
                 style={{
-                  marginTop:
-                    "12px",
-                  fontSize:
-                    "13px",
+                  marginTop: "12px",
+                  fontSize: "13px",
                 }}
               >
-                Contributors can
-                write and save
-                articles as drafts.
-                Only a SUPER_ADMIN
-                can publish.
+                Contributors can write and save
+                articles as drafts. Only a
+                SUPER_ADMIN can publish.
               </p>
             )}
 
             <h2
               className="h2"
               style={{
-                marginTop:
-                  "28px",
+                marginTop: "28px",
               }}
             >
               SEO
@@ -1151,8 +652,7 @@ export default function ArticlesPage() {
 
             <label
               style={{
-                marginTop:
-                  "12px",
+                marginTop: "12px",
               }}
             >
               SEO Title
@@ -1160,22 +660,18 @@ export default function ArticlesPage() {
 
             <input
               className="input"
-              value={
-                form.seo_title
-              }
+              value={form.seo_title}
               onChange={(event) =>
                 updateField(
                   "seo_title",
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
             />
 
             <label
               style={{
-                marginTop:
-                  "12px",
+                marginTop: "12px",
               }}
             >
               Meta Description
@@ -1184,22 +680,18 @@ export default function ArticlesPage() {
             <textarea
               className="input"
               rows="5"
-              value={
-                form.meta_description
-              }
+              value={form.meta_description}
               onChange={(event) =>
                 updateField(
                   "meta_description",
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
             />
 
             <label
               style={{
-                marginTop:
-                  "12px",
+                marginTop: "12px",
               }}
             >
               Canonical URL
@@ -1207,14 +699,11 @@ export default function ArticlesPage() {
 
             <input
               className="input"
-              value={
-                form.canonical_url
-              }
+              value={form.canonical_url}
               onChange={(event) =>
                 updateField(
                   "canonical_url",
-                  event.target
-                    .value
+                  event.target.value
                 )
               }
               placeholder="https://..."
@@ -1222,25 +711,19 @@ export default function ArticlesPage() {
 
             <label
               style={{
-                marginTop:
-                  "16px",
-                display:
-                  "flex",
+                marginTop: "16px",
+                display: "flex",
                 gap: "8px",
-                alignItems:
-                  "center",
+                alignItems: "center",
               }}
             >
               <input
                 type="checkbox"
-                checked={
-                  form.no_index
-                }
+                checked={form.no_index}
                 onChange={(event) =>
                   updateField(
                     "no_index",
-                    event.target
-                      .checked
+                    event.target.checked
                   )
                 }
               />
@@ -1262,16 +745,13 @@ export default function ArticlesPage() {
           </h1>
 
           <p className="muted">
-            Manage THE INDEX
-            editorial content.
+            Manage THE INDEX editorial content.
           </p>
         </div>
 
         <button
           className="btn primary"
-          onClick={
-            openNewArticle
-          }
+          onClick={openNewArticle}
         >
           New Article
         </button>
@@ -1313,9 +793,8 @@ export default function ArticlesPage() {
             </h2>
 
             <p className="muted">
-              Create your first
-              article using the
-              button above.
+              Create your first article using
+              the button above.
             </p>
           </div>
         ) : (
@@ -1325,72 +804,69 @@ export default function ArticlesPage() {
               gap: "14px",
             }}
           >
-            {articles.map(
-              (article) => {
-                const names =
-                  getCategoryNames(
-                    article.id
-                  )
+            {articles.map((article) => {
+              const names =
+                getCategoryNames(article.id)
 
-                return (
-                  <article
-                    key={
-                      article.id
-                    }
-                    style={{
-                      border:
-                        "1px solid #e5e5e5",
-                      borderRadius:
-                        "14px",
-                      padding:
-                        "16px",
-                    }}
-                  >
+              return (
+                <article
+                  key={article.id}
+                  style={{
+                    border:
+                      "1px solid #e5e5e5",
+                    borderRadius: "14px",
+                    padding: "16px",
+                  }}
+                >
+                  <div className="row spread">
                     <div
-                      className="row spread"
+                      style={{
+                        minWidth: 0,
+                      }}
                     >
-                      <div
+                      <h2
+                        className="h2"
                         style={{
-                          minWidth: 0,
+                          margin: 0,
                         }}
                       >
-                        <h2
-                          className="h2"
-                          style={{
-                            margin:
-                              0,
-                          }}
-                        >
-                          {
-                            article.title
-                          }
-                        </h2>
+                        {article.title}
+                      </h2>
 
-                        <p
-                          className="muted"
-                          style={{
-                            marginTop:
-                              "6px",
-                          }}
-                        >
-                          /
-                          {
-                            article.slug
-                          }
-                        </p>
+                      <p
+                        className="muted"
+                        style={{
+                          marginTop: "6px",
+                        }}
+                      >
+                        /{article.slug}
+                      </p>
 
-                        <div
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "6px",
+                          marginTop: "10px",
+                        }}
+                      >
+                        <span
                           style={{
-                            display:
-                              "flex",
-                            flexWrap:
-                              "wrap",
-                            gap: "6px",
-                            marginTop:
-                              "10px",
+                            border:
+                              "1px solid #ddd",
+                            borderRadius:
+                              "999px",
+                            padding:
+                              "4px 9px",
+                            fontSize: "12px",
                           }}
                         >
+                          {article.status}
+                        </span>
+
+                        {names.map((name) => (
                           <span
+                            key={name}
                             style={{
                               border:
                                 "1px solid #ddd",
@@ -1398,83 +874,50 @@ export default function ArticlesPage() {
                                 "999px",
                               padding:
                                 "4px 9px",
-                              fontSize:
-                                "12px",
+                              fontSize: "12px",
                             }}
                           >
-                            {
-                              article.status
-                            }
+                            {name}
                           </span>
-
-                          {names.map(
-                            (
-                              name
-                            ) => (
-                              <span
-                                key={
-                                  name
-                                }
-                                style={{
-                                  border:
-                                    "1px solid #ddd",
-                                  borderRadius:
-                                    "999px",
-                                  padding:
-                                    "4px 9px",
-                                  fontSize:
-                                    "12px",
-                                }}
-                              >
-                                {
-                                  name
-                                }
-                              </span>
-                            )
-                          )}
-                        </div>
+                        ))}
                       </div>
+                    </div>
 
-                      <div
-                        style={{
-                          display:
-                            "flex",
-                          gap: "8px",
-                          flexWrap:
-                            "wrap",
-                          justifyContent:
-                            "flex-end",
-                        }}
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: "8px",
+                        flexWrap: "wrap",
+                        justifyContent:
+                          "flex-end",
+                      }}
+                    >
+                      <button
+                        className="btn"
+                        onClick={() =>
+                          editArticle(article)
+                        }
                       >
+                        Edit
+                      </button>
+
+                      {isSuperAdmin && (
                         <button
                           className="btn"
                           onClick={() =>
-                            editArticle(
-                              article
+                            deleteArticle(
+                              article.id
                             )
                           }
                         >
-                          Edit
+                          Delete
                         </button>
-
-                        {isSuperAdmin && (
-                          <button
-                            className="btn"
-                            onClick={() =>
-                              deleteArticle(
-                                article.id
-                              )
-                            }
-                          >
-                            Delete
-                          </button>
-                        )}
-                      </div>
+                      )}
                     </div>
-                  </article>
-                )
-              }
-            )}
+                  </div>
+                </article>
+              )
+            })}
           </div>
         )}
       </div>
