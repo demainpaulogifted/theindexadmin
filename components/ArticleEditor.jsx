@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { supabase } from "@/lib/supabase"
+import ArticleEditor from "@/components/admin/ArticleEditor"
 
 const EMPTY_FORM = {
   title: "",
@@ -25,130 +26,266 @@ function makeSlug(value) {
     .replace(/-+/g, "-")
 }
 
-function getPublicSiteUrl() {
-  if (typeof window !== "undefined") {
-    return window.location.origin
-  }
+export default function ArticlesPage() {
+  const [articles, setArticles] = useState([])
+  const [categories, setCategories] = useState([])
+  const [categoryByPost, setCategoryByPost] = useState({})
+  const [admin, setAdmin] = useState(null)
 
-  return ""
-}
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [editingId, setEditingId] = useState(null)
 
-function escapeHtml(value) {
-  return String(value || "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;")
-}
+  const [showEditor, setShowEditor] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
-export default function ArticleEditor({
-  initialArticle = null,
-  initialCategoryIds = [],
-  categories = [],
-  admin = null,
-  onSaved,
-  onCancel,
-}) {
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
+
+  const [categorySearch, setCategorySearch] = useState("")
+  const [newCategoryName, setNewCategoryName] = useState("")
+  const [creatingCategory, setCreatingCategory] = useState(false)
+
   const isSuperAdmin =
     admin?.role === "SUPER_ADMIN"
 
-  const [form, setForm] = useState(() => {
-    if (!initialArticle) {
-      return {
-        ...EMPTY_FORM,
-        category_ids: [],
-      }
-    }
-
-    return {
-      title: initialArticle.title || "",
-      slug: initialArticle.slug || "",
-      excerpt: initialArticle.excerpt || "",
-      content_html:
-        initialArticle.content_html || "",
-      featured_image:
-        initialArticle.featured_image || "",
-      seo_title:
-        initialArticle.seo_title || "",
-      meta_description:
-        initialArticle.meta_description || "",
-      canonical_url:
-        initialArticle.canonical_url || "",
-      no_index:
-        Boolean(initialArticle.no_index),
-      category_ids: [
-        ...initialCategoryIds,
-      ],
-    }
-  })
-
-  const [localCategories, setLocalCategories] =
-    useState(categories)
-
-  const [categorySearch, setCategorySearch] =
-    useState("")
-
-  const [newCategoryName, setNewCategoryName] =
-    useState("")
-
-  const [creatingCategory, setCreatingCategory] =
-    useState(false)
-
-  const [saving, setSaving] =
-    useState(false)
-
-  const [uploadingFeatured, setUploadingFeatured] =
-    useState(false)
-
-  const [uploadingInline, setUploadingInline] =
-    useState(false)
-
-  const [message, setMessage] =
-    useState("")
-
-  const [error, setError] =
-    useState("")
-
-  const [imageAlt, setImageAlt] =
-    useState("")
-
-  const [imageCaption, setImageCaption] =
-    useState("")
-
-  const featuredInputRef =
-    useRef(null)
-
-  const inlineInputRef =
-    useRef(null)
-
-  const editorRef =
-    useRef(null)
-
-  useEffect(() => {
-    setLocalCategories(categories)
-  }, [categories])
-
   const filteredCategories = useMemo(() => {
     const query =
-      categorySearch
-        .trim()
-        .toLowerCase()
+      categorySearch.trim().toLowerCase()
 
     if (!query) {
-      return localCategories
+      return categories
     }
 
-    return localCategories.filter(
-      (category) =>
-        category.name
-          .toLowerCase()
-          .includes(query)
+    return categories.filter((category) =>
+      category.name
+        .toLowerCase()
+        .includes(query)
     )
-  }, [
-    localCategories,
-    categorySearch,
-  ])
+  }, [categories, categorySearch])
+
+  async function loadAdmin() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      throw new Error(
+        userError?.message ||
+          "Authentication session missing."
+      )
+    }
+
+    const {
+      data,
+      error: adminError,
+    } = await supabase
+      .from("admin_users")
+      .select(
+        "id,user_id,role,active"
+      )
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .maybeSingle()
+
+    if (adminError) {
+      throw new Error(
+        `Admin authorization failed: ${adminError.message}`
+      )
+    }
+
+    if (!data) {
+      throw new Error(
+        "No active admin record found."
+      )
+    }
+
+    const currentAdmin = {
+      ...data,
+      email: user.email,
+    }
+
+    setAdmin(currentAdmin)
+
+    return currentAdmin
+  }
+
+  async function loadArticles() {
+    const {
+      data,
+      error: postsError,
+    } = await supabase
+      .from("posts")
+      .select(
+        [
+          "id",
+          "title",
+          "slug",
+          "excerpt",
+          "content_html",
+          "featured_image",
+          "status",
+          "published_at",
+          "scheduled_at",
+          "seo_title",
+          "meta_description",
+          "canonical_url",
+          "no_index",
+          "author_id",
+          "created_at",
+          "updated_at",
+        ].join(",")
+      )
+      .order("updated_at", {
+        ascending: false,
+      })
+
+    if (postsError) {
+      throw new Error(
+        `Could not load articles: ${postsError.message}`
+      )
+    }
+
+    const rows = data || []
+
+    setArticles(rows)
+
+    if (!rows.length) {
+      setCategoryByPost({})
+      return
+    }
+
+    const {
+      data: relations,
+      error: relationError,
+    } = await supabase
+      .from("post_categories")
+      .select(
+        "post_id,category_id"
+      )
+      .in(
+        "post_id",
+        rows.map((row) => row.id)
+      )
+
+    if (relationError) {
+      throw new Error(
+        `Could not load article categories: ${relationError.message}`
+      )
+    }
+
+    const lookup = {}
+
+    for (const relation of relations || []) {
+      if (!lookup[relation.post_id]) {
+        lookup[relation.post_id] = []
+      }
+
+      lookup[relation.post_id].push(
+        relation.category_id
+      )
+    }
+
+    setCategoryByPost(lookup)
+  }
+
+  async function loadCategories() {
+    const {
+      data,
+      error: categoriesError,
+    } = await supabase
+      .from("categories")
+      .select(
+        "id,name,slug,parent_id,description"
+      )
+      .order("name", {
+        ascending: true,
+      })
+
+    if (categoriesError) {
+      throw new Error(
+        `Could not load categories: ${categoriesError.message}`
+      )
+    }
+
+    setCategories(data || [])
+  }
+
+  async function loadData() {
+    setLoading(true)
+    setError("")
+
+    try {
+      await loadAdmin()
+
+      await Promise.all([
+        loadArticles(),
+        loadCategories(),
+      ])
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err.message ||
+          "Could not load Articles."
+      )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
+  function resetEditor() {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setCategorySearch("")
+    setNewCategoryName("")
+  }
+
+  function openNewArticle() {
+    resetEditor()
+    setMessage("")
+    setError("")
+    setShowEditor(true)
+  }
+
+  function editArticle(article) {
+    const existingCategoryIds =
+      categoryByPost[article.id] || []
+
+    setEditingId(article.id)
+
+    setForm({
+      title: article.title || "",
+      slug: article.slug || "",
+      excerpt: article.excerpt || "",
+      content_html:
+        article.content_html || "",
+      featured_image:
+        article.featured_image || "",
+      seo_title:
+        article.seo_title || "",
+      meta_description:
+        article.meta_description || "",
+      canonical_url:
+        article.canonical_url || "",
+      no_index:
+        Boolean(article.no_index),
+      category_ids: [
+        ...existingCategoryIds,
+      ],
+    })
+
+    setMessage("")
+    setError("")
+    setCategorySearch("")
+    setNewCategoryName("")
+    setShowEditor(true)
+  }
 
   function updateField(field, value) {
     setForm((current) => ({
@@ -162,30 +299,23 @@ export default function ArticleEditor({
       const currentIds =
         current.category_ids || []
 
-      if (
+      const alreadySelected =
         currentIds.includes(categoryId)
-      ) {
-        return {
-          ...current,
-          category_ids:
-            currentIds.filter(
-              (id) =>
-                id !== categoryId
-            ),
-        }
-      }
 
       return {
         ...current,
-        category_ids: [
-          ...currentIds,
-          categoryId,
-        ],
+        category_ids:
+          alreadySelected
+            ? currentIds.filter(
+                (id) => id !== categoryId
+              )
+            : [
+                ...currentIds,
+                categoryId,
+              ],
       }
     })
-  }
-
-  async function createCategory() {
+  }async function createCategory() {
     const name =
       newCategoryName.trim()
 
@@ -201,8 +331,7 @@ export default function ArticleEditor({
     setMessage("")
 
     try {
-      const slug =
-        makeSlug(name)
+      const slug = makeSlug(name)
 
       if (!slug) {
         throw new Error(
@@ -253,40 +382,32 @@ export default function ArticleEditor({
         category = created
       }
 
-      setLocalCategories(
-        (current) => {
-          const exists =
-            current.some(
-              (item) =>
-                item.id ===
-                category.id
-            )
+      setCategories((current) => {
+        const exists = current.some(
+          (item) =>
+            item.id === category.id
+        )
 
-          if (exists) {
-            return current
-          }
+        if (exists) {
+          return current
+        }
 
-          return [
-            ...current,
-            category,
-          ].sort((a, b) =>
+        return [...current, category].sort(
+          (a, b) =>
             a.name.localeCompare(
               b.name
             )
-          )
-        }
-      )
+        )
+      })
 
       setForm((current) => ({
         ...current,
         category_ids: [
-          ...(current.category_ids ||
-            []),
+          ...(current.category_ids || []),
           category.id,
         ].filter(
           (id, index, array) =>
-            array.indexOf(id) ===
-            index
+            array.indexOf(id) === index
         ),
       }))
 
@@ -309,339 +430,80 @@ export default function ArticleEditor({
     }
   }
 
-  async function uploadImage(
-    file,
-    type = "inline"
+  async function saveCategories(
+    postId,
+    categoryIds
   ) {
-    if (!file) {
-      return null
-    }
-
-    if (!file.type.startsWith("image/")) {
-      throw new Error(
-        "Please select an image file."
-      )
-    }
-
-    const maxSize =
-      10 * 1024 * 1024
-
-    if (file.size > maxSize) {
-      throw new Error(
-        "Image must be smaller than 10MB."
-      )
-    }
-
     const {
-      data: {
-        user,
-      },
-    } =
-      await supabase.auth.getUser()
+      error: deleteError,
+    } = await supabase
+      .from("post_categories")
+      .delete()
+      .eq("post_id", postId)
 
-    if (!user) {
+    if (deleteError) {
       throw new Error(
-        "Authentication session missing."
+        `Could not update article categories: ${deleteError.message}`
       )
     }
 
-    const extension =
-      file.name
-        .split(".")
-        .pop()
-        ?.toLowerCase() ||
-      "jpg"
+    const ids = [
+      ...new Set(categoryIds || []),
+    ]
 
-    const safeName =
-      file.name
-        .replace(
-          /[^a-zA-Z0-9._-]/g,
-          "-"
-        )
-        .replace(
-          /-+/g,
-          "-"
-        )
-
-    const uniqueName =
-      `${Date.now()}-${crypto.randomUUID()}-${safeName}`
-
-    const path =
-      `${user.id}/${uniqueName}`
-
-    const {
-      error: uploadError,
-    } = await supabase.storage
-      .from("article-images")
-      .upload(
-        path,
-        file,
-        {
-          cacheControl:
-            "3600",
-          upsert: false,
-          contentType:
-            file.type ||
-            `image/${extension}`,
-        }
-      )
-
-    if (uploadError) {
-      throw new Error(
-        `Image upload failed: ${uploadError.message}`
-      )
-    }
-
-    const {
-      data: publicData,
-    } =
-      supabase.storage
-        .from("article-images")
-        .getPublicUrl(path)
-
-    if (!publicData?.publicUrl) {
-      throw new Error(
-        "Image uploaded but a public URL could not be generated."
-      )
-    }
-
-    return publicData.publicUrl
-  }
-
-  async function handleFeaturedImage(
-    event
-  ) {
-    const file =
-      event.target.files?.[0]
-
-    event.target.value = ""
-
-    if (!file) {
+    if (!ids.length) {
       return
     }
 
-    setUploadingFeatured(true)
-    setError("")
-    setMessage("")
-
-    try {
-      const url =
-        await uploadImage(
-          file,
-          "featured"
-        )
-
-      updateField(
-        "featured_image",
-        url
-      )
-
-      setMessage(
-        "Featured image uploaded successfully."
-      )
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not upload featured image."
-      )
-    } finally {
-      setUploadingFeatured(false)
-    }
-  }
-
-  function insertHtmlAtCursor(
-    html
-  ) {
-    const textarea =
-      editorRef.current
-
-    if (!textarea) {
-      updateField(
-        "content_html",
-        `${form.content_html}\n${html}`
-      )
-      return
-    }
-
-    const start =
-      textarea.selectionStart ??
-      form.content_html.length
-
-    const end =
-      textarea.selectionEnd ??
-      start
-
-    const current =
-      form.content_html
-
-    const next =
-      current.slice(
-        0,
-        start
-      ) +
-      html +
-      current.slice(end)
-
-    updateField(
-      "content_html",
-      next
+    const rows = ids.map(
+      (categoryId) => ({
+        post_id: postId,
+        category_id: categoryId,
+      })
     )
 
-    setTimeout(() => {
-      textarea.focus()
+    const {
+      error: insertError,
+    } = await supabase
+      .from("post_categories")
+      .insert(rows)
 
-      const cursor =
-        start + html.length
-
-      textarea.selectionStart =
-        cursor
-
-      textarea.selectionEnd =
-        cursor
-    }, 0)
+    if (insertError) {
+      throw new Error(
+        `Could not save article categories: ${insertError.message}`
+      )
+    }
   }
 
-  async function handleInlineImage(
-    event
-  ) {
-    const file =
-      event.target.files?.[0]
-
-    event.target.value = ""
-
-    if (!file) {
+  async function saveArticle(status) {
+    if (!admin) {
+      setError(
+        "Admin account has not loaded."
+      )
       return
     }
 
-    setUploadingInline(true)
-    setError("")
-    setMessage("")
-
-    try {
-      const url =
-        await uploadImage(
-          file,
-          "inline"
-        )
-
-      const alt =
-        imageAlt.trim() ||
-        file.name
-          .replace(
-            /\.[^/.]+$/,
-            ""
-          )
-          .replace(
-            /[-_]+/g,
-            " "
-          )
-
-      const escapedUrl =
-        escapeHtml(url)
-
-      const escapedAlt =
-        escapeHtml(alt)
-
-      let html =
-        `<figure class="article-image"><img src="${escapedUrl}" alt="${escapedAlt}" loading="lazy" />`
-
-      if (
-        imageCaption.trim()
-      ) {
-        html +=
-          `<figcaption>${escapeHtml(imageCaption.trim())}</figcaption>`
-      }
-
-      html +=
-        `</figure>\n`
-
-      insertHtmlAtCursor(
-        html
-      )
-
-      setImageAlt("")
-      setImageCaption("")
-
-      setMessage(
-        "Image uploaded and inserted into the article."
-      )
-    } catch (err) {
-      console.error(err)
-
+    if (
+      !isSuperAdmin &&
+      status === "PUBLISHED"
+    ) {
       setError(
-        err.message ||
-          "Could not upload inline image."
+        "Only a SUPER_ADMIN can publish an article."
       )
-    } finally {
-      setUploadingInline(false)
-    }
-  }
-
-  function buildCanonicalUrl(
-    slug
-  ) {
-    const base =
-      getPublicSiteUrl()
-
-    if (!base || !slug) {
-      return ""
+      return
     }
 
-    return `${base}/article/${encodeURIComponent(
-      slug
-    )}`
-  }
-
-  function handleTitleBlur() {
-    if (!form.slug) {
-      const slug =
-        makeSlug(form.title)
-
-      updateField(
-        "slug",
-        slug
-      )
-
-      if (
-        !form.canonical_url
-      ) {
-        updateField(
-          "canonical_url",
-          buildCanonicalUrl(
-            slug
-          )
-        )
-      }
-    }
-  }  async function saveArticle(status) {
     setSaving(true)
-    setError("")
     setMessage("")
+    setError("")
 
     try {
-      const {
-        data: {
-          user,
-        },
-      } =
-        await supabase.auth.getUser()
-
-      if (!user) {
-        throw new Error(
-          "You must be signed in to save an article."
-        )
-      }
-
       const title =
         form.title.trim()
 
       const slug =
-        makeSlug(
-          form.slug ||
-            form.title
-        )
+        form.slug.trim() ||
+        makeSlug(title)
 
       if (!title) {
         throw new Error(
@@ -651,24 +513,12 @@ export default function ArticleEditor({
 
       if (!slug) {
         throw new Error(
-          "A valid article slug is required."
+          "Article slug is required."
         )
       }
 
-      if (
-        status === "PUBLISHED" &&
-        !isSuperAdmin
-      ) {
-        throw new Error(
-          "Only a SUPER_ADMIN can publish articles."
-        )
-      }
-
-      const canonical =
-        form.canonical_url.trim() ||
-        buildCanonicalUrl(
-          slug
-        )
+      const now =
+        new Date().toISOString()
 
       const payload = {
         title,
@@ -677,41 +527,41 @@ export default function ArticleEditor({
           form.excerpt.trim() ||
           null,
         content_html:
-          form.content_html ||
-          "",
+          form.content_html || "",
         featured_image:
           form.featured_image.trim() ||
           null,
+        status,
+        published_at:
+          status === "PUBLISHED"
+            ? now
+            : null,
         seo_title:
           form.seo_title.trim() ||
-          title,
+          null,
         meta_description:
           form.meta_description.trim() ||
-          form.excerpt.trim() ||
           null,
         canonical_url:
-          canonical || null,
+          form.canonical_url.trim() ||
+          null,
         no_index:
           Boolean(form.no_index),
-        status,
+        updated_at: now,
       }
 
-      let article
+      let saved
 
-      if (initialArticle?.id) {
+      if (editingId) {
         const {
           data,
           error: updateError,
-        } =
-          await supabase
-            .from("posts")
-            .update(payload)
-            .eq(
-              "id",
-              initialArticle.id
-            )
-            .select("*")
-            .single()
+        } = await supabase
+          .from("posts")
+          .update(payload)
+          .eq("id", editingId)
+          .select()
+          .single()
 
         if (updateError) {
           throw new Error(
@@ -719,21 +569,32 @@ export default function ArticleEditor({
           )
         }
 
-        article = data
+        saved = data
       } else {
+        const {
+          data: {
+            user,
+          },
+        } =
+          await supabase.auth.getUser()
+
+        if (!user) {
+          throw new Error(
+            "Authentication session missing."
+          )
+        }
+
         const {
           data,
           error: insertError,
-        } =
-          await supabase
-            .from("posts")
-            .insert({
-              ...payload,
-              author_id:
-                user.id,
-            })
-            .select("*")
-            .single()
+        } = await supabase
+          .from("posts")
+          .insert({
+            ...payload,
+            author_id: user.id,
+          })
+          .select()
+          .single()
 
         if (insertError) {
           throw new Error(
@@ -741,84 +602,26 @@ export default function ArticleEditor({
           )
         }
 
-        article = data
+        saved = data
       }
 
-      const categoryIds =
-        Array.from(
-          new Set(
-            form.category_ids ||
-              []
-          )
+      if (saved?.id) {
+        await saveCategories(
+          saved.id,
+          form.category_ids
         )
-
-      if (article?.id) {
-        const {
-          error: deleteCategoryError,
-        } =
-          await supabase
-            .from("post_categories")
-            .delete()
-            .eq(
-              "post_id",
-              article.id
-            )
-
-        if (
-          deleteCategoryError
-        ) {
-          throw new Error(
-            `Could not update article categories: ${deleteCategoryError.message}`
-          )
-        }
-
-        if (
-          categoryIds.length >
-          0
-        ) {
-          const rows =
-            categoryIds.map(
-              (categoryId) => ({
-                post_id:
-                  article.id,
-                category_id:
-                  categoryId,
-              })
-            )
-
-          const {
-            error:
-              categoryInsertError,
-          } =
-            await supabase
-              .from(
-                "post_categories"
-              )
-              .insert(rows)
-
-          if (
-            categoryInsertError
-          ) {
-            throw new Error(
-              `Could not save categories: ${categoryInsertError.message}`
-            )
-          }
-        }
       }
 
       setMessage(
-        status ===
-          "PUBLISHED"
+        status === "PUBLISHED"
           ? "Article published successfully."
-          : "Draft saved successfully."
+          : "Article saved successfully."
       )
 
-      if (onSaved) {
-        await onSaved(
-          article,
-          categoryIds
-        )
-      }
+      setShowEditor(false)
+      resetEditor()
+
+      await loadArticles()
     } catch (err) {
       console.error(err)
 
@@ -831,39 +634,157 @@ export default function ArticleEditor({
     }
   }
 
-  return (
-    <main>
-      <div
-        className="row spread"
+  async function deleteArticle(id) {
+    if (!isSuperAdmin) {
+      setError(
+        "Only a SUPER_ADMIN can delete articles."
+      )
+      return
+    }
+
+    if (
+      !window.confirm(
+        "Delete this article permanently?"
+      )
+    ) {
+      return
+    }
+
+    setError("")
+    setMessage("")
+
+    try {
+      const {
+        error: relationError,
+      } = await supabase
+        .from("post_categories")
+        .delete()
+        .eq("post_id", id)
+
+      if (relationError) {
+        throw new Error(
+          `Could not remove article categories: ${relationError.message}`
+        )
+      }
+
+      const {
+        error: postError,
+      } = await supabase
+        .from("posts")
+        .delete()
+        .eq("id", id)
+
+      if (postError) {
+        throw new Error(
+          `Could not delete article: ${postError.message}`
+        )
+      }
+
+      setMessage(
+        "Article deleted."
+      )
+
+      await loadArticles()
+    } catch (err) {
+      console.error(err)
+
+      setError(
+        err.message ||
+          "Could not delete article."
+      )
+    }
+  }
+
+  function getCategoryNames(articleId) {
+    const ids =
+      categoryByPost[articleId] || []
+
+    return ids
+      .map((id) => {
+        const category =
+          categories.find(
+            (item) =>
+              item.id === id
+          )
+
+        return category?.name
+      })
+      .filter(Boolean)
+  }
+
+  if (loading) {
+    return (
+      <main
         style={{
-          gap: "16px",
+          minHeight: "60vh",
+          display: "grid",
+          placeItems: "center",
         }}
       >
+        <p>Loading Articles…</p>
+      </main>
+    )
+  }
+
+  if (showEditor) {
+    const editingArticle = editingId
+      ? articles.find(
+          (article) =>
+            article.id === editingId
+        )
+      : null
+
+    return (
+      <ArticleEditor
+        initialArticle={editingArticle}
+        initialCategoryIds={
+          editingId
+            ? categoryByPost[editingId] || []
+            : []
+        }
+        categories={categories}
+        admin={admin}
+        onSaved={async () => {
+          setShowEditor(false)
+          resetEditor()
+          setMessage(
+            "Article saved successfully."
+          )
+          setError("")
+          await loadArticles()
+        }}
+        onCancel={() => {
+          setShowEditor(false)
+          resetEditor()
+          setMessage("")
+          setError("")
+        }}
+      />
+    )
+  }
+
+  return (
+    <main>
+      <div className="row spread">
         <div>
           <h1 className="h1">
-            {initialArticle
-              ? "Edit Article"
-              : "New Article"}
+            Articles
           </h1>
 
           <p className="muted">
-            Create polished
-            editorial content
-            for THE INDEX.
+            Manage THE INDEX
+            editorial content.
           </p>
         </div>
 
-        {onCancel && (
-          <button
-            type="button"
-            className="btn"
-            onClick={
-              onCancel
-            }
-          >
-            Back
-          </button>
-        )}
+        <button
+          className="btn primary"
+          onClick={
+            openNewArticle
+          }
+        >
+          New Article
+        </button>
       </div>
 
       {message && (
@@ -887,710 +808,206 @@ export default function ArticleEditor({
         >
           {error}
         </div>
-      )}
-
-      <div
-        className="grid grid3"
+      )}<div
+        className="card"
         style={{
           marginTop: "18px",
-          alignItems:
-            "start",
         }}
       >
-        <section
-          className="card"
-          style={{
-            gridColumn:
-              "span 2",
-          }}
-        >
-          <label>
-            Title
-          </label>
+        {articles.length === 0 ? (
+          <div>
+            <h2 className="h2">
+              No articles yet
+            </h2>
 
-          <input
-            className="input"
-            value={form.title}
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "title",
-                event.target
-                  .value
-              )
-            }
-            onBlur={
-              handleTitleBlur
-            }
-            placeholder="Article title"
-          />
-
-          <label
-            style={{
-              marginTop:
-                "16px",
-            }}
-          >
-            Slug
-          </label>
-
-          <input
-            className="input"
-            value={form.slug}
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "slug",
-                makeSlug(
-                  event.target
-                    .value
-                )
-              )
-            }
-            placeholder="article-slug"
-          />
-
-          <label
-            style={{
-              marginTop:
-                "16px",
-            }}
-          >
-            Excerpt
-          </label>
-
-          <textarea
-            className="input"
-            rows="4"
-            value={form.excerpt}
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "excerpt",
-                event.target
-                  .value
-              )
-            }
-            placeholder="Short article summary"
-          />
-
-          <div
-            style={{
-              display:
-                "flex",
-              justifyContent:
-                "space-between",
-              alignItems:
-                "center",
-              gap: "12px",
-              marginTop:
-                "16px",
-            }}
-          >
-            <label
-              style={{
-                margin: 0,
-              }}
-            >
-              Article Content
-            </label>
-
-            <button
-              type="button"
-              className="btn"
-              onClick={() =>
-                inlineInputRef.current?.click()
-              }
-              disabled={
-                uploadingInline
-              }
-            >
-              {uploadingInline
-                ? "Uploading..."
-                : "📷 Insert Image"}
-            </button>
-          </div>
-
-          <input
-            ref={
-              inlineInputRef
-            }
-            type="file"
-            accept="image/*"
-            style={{
-              display:
-                "none",
-            }}
-            onChange={
-              handleInlineImage
-            }
-          />
-
-          <textarea
-            ref={editorRef}
-            className="input"
-            rows="22"
-            value={
-              form.content_html
-            }
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "content_html",
-                event.target
-                  .value
-              )
-            }
-            placeholder={`Write your article here.
-
-You can use HTML such as:
-
-<h2>A section heading</h2>
-<p>Your article paragraph...</p>
-<ul>
-  <li>First point</li>
-  <li>Second point</li>
-</ul>
-
-Use "📷 Insert Image" to upload an image directly into the article.`}
-            style={{
-              fontFamily:
-                "monospace",
-              marginTop:
-                "8px",
-            }}
-          />
-
-          <div
-            style={{
-              marginTop:
-                "12px",
-              padding:
-                "12px",
-              border:
-                "1px solid #e5e5e5",
-              borderRadius:
-                "12px",
-              background:
-                "#fafafa",
-            }}
-          >
-            <strong>
-              Inline image
-            </strong>
-
-            <p
-              className="muted"
-              style={{
-                marginTop:
-                  "4px",
-                fontSize:
-                  "13px",
-              }}
-            >
-              Place your cursor
-              where you want the
-              image, then tap
-              "Insert Image".
-              The uploaded image
-              will be inserted at
-              that position.
+            <p className="muted">
+              Create your first
+              article using the
+              button above.
             </p>
-
-            <label
-              style={{
-                marginTop:
-                  "10px",
-              }}
-            >
-              Image Alt Text
-            </label>
-
-            <input
-              className="input"
-              value={imageAlt}
-              onChange={(
-                event
-              ) =>
-                setImageAlt(
-                  event.target
-                    .value
-                )
-              }
-              placeholder="Describe the image"
-            />
-
-            <label
-              style={{
-                marginTop:
-                  "10px",
-              }}
-            >
-              Image Caption
-            </label>
-
-            <input
-              className="input"
-              value={
-                imageCaption
-              }
-              onChange={(
-                event
-              ) =>
-                setImageCaption(
-                  event.target
-                    .value
-                )
-              }
-              placeholder="Optional image caption"
-            />
           </div>
-
+        ) : (
           <div
             style={{
-              marginTop:
-                "20px",
+              display: "grid",
+              gap: "14px",
             }}
           >
-            <label>
-              Featured Image
-            </label>
-
-            <div
-              style={{
-                display:
-                  "flex",
-                gap: "8px",
-                marginTop:
-                  "8px",
-              }}
-            >
-              <input
-                className="input"
-                value={
-                  form.featured_image
-                }
-                onChange={(
-                  event
-                ) =>
-                  updateField(
-                    "featured_image",
-                    event.target
-                      .value
+            {articles.map(
+              (article) => {
+                const names =
+                  getCategoryNames(
+                    article.id
                   )
-                }
-                placeholder="Image URL"
-              />
 
-              <button
-                type="button"
-                className="btn"
-                onClick={() =>
-                  featuredInputRef.current?.click()
-                }
-                disabled={
-                  uploadingFeatured
-                }
-              >
-                {uploadingFeatured
-                  ? "Uploading..."
-                  : "Upload"}
-              </button>
-            </div>
-
-            <input
-              ref={
-                featuredInputRef
-              }
-              type="file"
-              accept="image/*"
-              style={{
-                display:
-                  "none",
-              }}
-              onChange={
-                handleFeaturedImage
-              }
-            />
-
-            {form.featured_image && (
-              <div
-                style={{
-                  marginTop:
-                    "12px",
-                }}
-              >
-                <img
-                  src={
-                    form.featured_image
-                  }
-                  alt={
-                    form.title ||
-                    "Featured image"
-                  }
-                  style={{
-                    width:
-                      "100%",
-                    maxHeight:
-                      "360px",
-                    objectFit:
-                      "cover",
-                    borderRadius:
-                      "14px",
-                  }}
-                />
-              </div>
-            )}
-          </div>
-        </section>
-
-        <aside className="card">
-          <h2 className="h2">
-            Categories
-          </h2>
-
-          <input
-            className="input"
-            style={{
-              marginTop:
-                "10px",
-            }}
-            value={
-              categorySearch
-            }
-            onChange={(
-              event
-            ) =>
-              setCategorySearch(
-                event.target
-                  .value
-              )
-            }
-            placeholder="Search categories..."
-          />
-
-          <div
-            style={{
-              marginTop:
-                "10px",
-              border:
-                "1px solid #ddd",
-              borderRadius:
-                "12px",
-              padding:
-                "10px",
-              maxHeight:
-                "260px",
-              overflowY:
-                "auto",
-            }}
-          >
-            {filteredCategories.length ===
-            0 ? (
-              <p
-                className="muted"
-                style={{
-                  margin: 0,
-                }}
-              >
-                No categories
-                found.
-              </p>
-            ) : (
-              filteredCategories.map(
-                (category) => {
-                  const selected =
-                    (
-                      form.category_ids ||
-                      []
-                    ).includes(
-                      category.id
-                    )
-
-                  return (
-                    <label
-                      key={
-                        category.id
-                      }
-                      style={{
-                        display:
-                          "flex",
-                        alignItems:
-                          "center",
-                        gap: "10px",
-                        padding:
-                          "8px 4px",
-                        cursor:
-                          "pointer",
-                      }}
+                return (
+                  <article
+                    key={
+                      article.id
+                    }
+                    style={{
+                      border:
+                        "1px solid #e5e5e5",
+                      borderRadius:
+                        "14px",
+                      padding:
+                        "16px",
+                    }}
+                  >
+                    <div
+                      className="row spread"
                     >
-                      <input
-                        type="checkbox"
-                        checked={
-                          selected
-                        }
-                        onChange={() =>
-                          toggleCategory(
-                            category.id
-                          )
-                        }
-                      />
+                      <div
+                        style={{
+                          minWidth: 0,
+                        }}
+                      >
+                        <h2
+                          className="h2"
+                          style={{
+                            margin: 0,
+                          }}
+                        >
+                          {
+                            article.title
+                          }
+                        </h2>
 
-                      <span>
+                        <p
+                          className="muted"
+                          style={{
+                            marginTop:
+                              "6px",
+                          }}
+                        >
+                          /
+                          {
+                            article.slug
+                          }
+                        </p>
+
+                        <div
+                          style={{
+                            display:
+                              "flex",
+                            flexWrap:
+                              "wrap",
+                            gap: "6px",
+                            marginTop:
+                              "10px",
+                          }}
+                        >
+                          <span
+                            style={{
+                              border:
+                                "1px solid #ddd",
+                              borderRadius:
+                                "999px",
+                              padding:
+                                "4px 9px",
+                            }}
+                          >
+                            {
+                              article.status
+                            }
+                          </span>
+
+                          {names.map(
+                            (name) => (
+                              <span
+                                key={
+                                  name
+                                }
+                                style={{
+                                  border:
+                                    "1px solid #ddd",
+                                  borderRadius:
+                                    "999px",
+                                  padding:
+                                    "4px 9px",
+                                }}
+                              >
+                                {name}
+                              </span>
+                            )
+                          )}
+                        </div>
+
+                        <p
+                          className="muted"
+                          style={{
+                            marginTop:
+                              "10px",
+                          }}
+                        >
+                          Updated{" "}
+                          {article.updated_at
+                            ? new Date(
+                                article.updated_at
+                              ).toLocaleString()
+                            : "—"}
+                        </p>
+                      </div>
+
+                      <div
+                        style={{
+                          display:
+                            "flex",
+                          gap: "8px",
+                          flexWrap:
+                            "wrap",
+                          justifyContent:
+                            "flex-end",
+                        }}
+                      >
+                        <button
+                          className="btn"
+                          onClick={() =>
+                            editArticle(
+                              article
+                            )
+                          }
+                        >
+                          Edit
+                        </button>
+
+                        {isSuperAdmin && (
+                          <button
+                            className="btn"
+                            style={{
+                              color:
+                                "#b00020",
+                            }}
+                            onClick={() =>
+                              deleteArticle(
+                                article.id
+                              )
+                            }
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {article.excerpt && (
+                      <p
+                        style={{
+                          marginTop:
+                            "12px",
+                        }}
+                      >
                         {
-                          category.name
+                          article.excerpt
                         }
-                      </span>
-                    </label>
-                  )
-                }
-              )
+                      </p>
+                    )}
+                  </article>
+                )
+              }
             )}
           </div>
-
-          <p
-            className="muted"
-            style={{
-              marginTop:
-                "8px",
-              fontSize:
-                "13px",
-            }}
-          >
-            {
-              (
-                form.category_ids ||
-                []
-              ).length
-            }{" "}
-            selected
-          </p>
-
-          <div
-            style={{
-              display:
-                "flex",
-              gap: "8px",
-              marginTop:
-                "12px",
-            }}
-          >
-            <input
-              className="input"
-              value={
-                newCategoryName
-              }
-              onChange={(
-                event
-              ) =>
-                setNewCategoryName(
-                  event.target
-                    .value
-                )
-              }
-              placeholder="New category"
-            />
-
-            <button
-              type="button"
-              className="btn"
-              onClick={
-                createCategory
-              }
-              disabled={
-                creatingCategory
-              }
-            >
-              {creatingCategory
-                ? "..."
-                : "+ Create"}
-            </button>
-          </div>
-
-          <h2
-            className="h2"
-            style={{
-              marginTop:
-                "28px",
-            }}
-          >
-            SEO
-          </h2>
-
-          <label
-            style={{
-              marginTop:
-                "12px",
-            }}
-          >
-            SEO Title
-          </label>
-
-          <input
-            className="input"
-            value={
-              form.seo_title
-            }
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "seo_title",
-                event.target
-                  .value
-              )
-            }
-            placeholder={
-              form.title
-            }
-          />
-
-          <label
-            style={{
-              marginTop:
-                "12px",
-            }}
-          >
-            Meta Description
-          </label>
-
-          <textarea
-            className="input"
-            rows="4"
-            value={
-              form.meta_description
-            }
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "meta_description",
-                event.target
-                  .value
-              )
-            }
-            placeholder="Search engine description"
-          />
-
-          <label
-            style={{
-              marginTop:
-                "12px",
-            }}
-          >
-            Canonical URL
-          </label>
-
-          <input
-            className="input"
-            value={
-              form.canonical_url
-            }
-            onChange={(
-              event
-            ) =>
-              updateField(
-                "canonical_url",
-                event.target
-                  .value
-              )
-            }
-            placeholder="Automatically generated"
-          />
-
-          <p
-            className="muted"
-            style={{
-              marginTop:
-                "6px",
-              fontSize:
-                "12px",
-            }}
-          >
-            Leave this empty
-            and THE INDEX will
-            generate the canonical
-            article URL
-            automatically.
-          </p>
-
-          <label
-            style={{
-              display:
-                "flex",
-              gap: "8px",
-              alignItems:
-                "center",
-              marginTop:
-                "14px",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={
-                form.no_index
-              }
-              onChange={(
-                event
-              ) =>
-                updateField(
-                  "no_index",
-                  event.target
-                    .checked
-                )
-              }
-            />
-
-             Hide from search
-            engines
-          </label>
-
-          <div
-            style={{
-              marginTop:
-                "28px",
-              display:
-                "grid",
-              gap: "10px",
-            }}
-          >
-            <button
-              type="button"
-              className="btn"
-              disabled={saving}
-              onClick={() =>
-                saveArticle(
-                  "DRAFT"
-                )
-              }
-            >
-              {saving
-                ? "Saving..."
-                : "Save Draft"}
-            </button>
-
-            {isSuperAdmin && (
-              <button
-                type="button"
-                className="btn primary"
-                disabled={saving}
-                onClick={() =>
-                  saveArticle(
-                    "PUBLISHED"
-                  )
-                }
-              >
-                {saving
-                  ? "Publishing..."
-                  : "Publish Article"}
-              </button>
-            )}
-          </div>
-        </aside>
+        )}
       </div>
     </main>
   )
