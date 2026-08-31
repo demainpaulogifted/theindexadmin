@@ -1,53 +1,40 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { supabase } from "@/lib/supabase"
 
 const EMPTY_FORM = {
-  name: "",
-  advertiser_name: "",
-  headline: "",
-  description: "",
+  title: "",
   image_url: "",
   target_url: "",
-  placement: "all",
+  alt_text: "",
+  placement: "between_articles",
   article_id: "",
   category_id: "",
-  countries: "",
-  devices: ["desktop", "mobile", "tablet"],
+  countries: [],
+  devices: ["mobile", "tablet", "desktop"],
   start_at: "",
   end_at: "",
-  status: "ACTIVE",
+  active: true,
 }
 
-const PLACEMENTS = [
-  {
-    value: "all",
-    label: "All eligible placements",
-  },
-  {
-    value: "homepage",
-    label: "Homepage",
-  },
-  {
-    value: "article",
-    label: "Articles",
-  },
-  {
-    value: "category",
-    label: "Categories",
-  },
-  {
-    value: "article_category",
-    label: "Specific article/category",
-  },
+const COUNTRY_OPTIONS = [
+  { code: "NG", name: "Nigeria" },
+  { code: "GH", name: "Ghana" },
+  { code: "KE", name: "Kenya" },
+  { code: "ZA", name: "South Africa" },
+  { code: "US", name: "United States" },
+  { code: "GB", name: "United Kingdom" },
+  { code: "CA", name: "Canada" },
+  { code: "AU", name: "Australia" },
+  { code: "DE", name: "Germany" },
+  { code: "FR", name: "France" },
+  { code: "IN", name: "India" },
+  { code: "AE", name: "United Arab Emirates" },
 ]
 
-const DEVICES = [
-  {
-    value: "desktop",
-    label: "Desktop",
-  },
+const DEVICE_OPTIONS = [
   {
     value: "mobile",
     label: "Mobile",
@@ -56,17 +43,38 @@ const DEVICES = [
     value: "tablet",
     label: "Tablet",
   },
+  {
+    value: "desktop",
+    label: "Desktop",
+  },
 ]
 
-function formatDate(value) {
-  if (!value) return "—"
-
-  try {
-    return new Date(value).toLocaleString()
-  } catch {
-    return "—"
-  }
-}
+const PLACEMENT_OPTIONS = [
+  {
+    value: "between_articles",
+    label: "Between Articles",
+  },
+  {
+    value: "article_top",
+    label: "Top of Article",
+  },
+  {
+    value: "article_bottom",
+    label: "Bottom of Article",
+  },
+  {
+    value: "category_top",
+    label: "Top of Category",
+  },
+  {
+    value: "category_bottom",
+    label: "Bottom of Category",
+  },
+  {
+    value: "homepage",
+    label: "Homepage",
+  },
+]
 
 function isValidId(id) {
   return Boolean(
@@ -76,64 +84,176 @@ function isValidId(id) {
   )
 }
 
-export default function AdvertisingPage() {
+function formatDate(value) {
+  if (!value) {
+    return "—"
+  }
+
+  try {
+    return new Date(value).toLocaleString()
+  } catch {
+    return "—"
+  }
+}
+
+function normaliseCountries(value) {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function normaliseDevices(value) {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  if (typeof value === "string") {
+    return value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  }
+
+  return [
+    "mobile",
+    "tablet",
+    "desktop",
+  ]
+}
+
+export default function AdsPage() {
+  const router = useRouter()
+
   const [ads, setAds] = useState([])
   const [articles, setArticles] = useState([])
   const [categories, setCategories] = useState([])
-
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-
-  const [showEditor, setShowEditor] = useState(false)
-  const [editingId, setEditingId] = useState(null)
+  const [admin, setAdmin] = useState(null)
 
   const [form, setForm] = useState({
     ...EMPTY_FORM,
+    countries: [],
+    devices: [
+      "mobile",
+      "tablet",
+      "desktop",
+    ],
   })
 
-  const [message, setMessage] = useState("")
-  const [error, setError] = useState("")
+  const [editingId, setEditingId] = useState(null)
 
-  const activeAds = useMemo(
-    () =>
-      ads.filter(
-        (ad) =>
-          ad.status === "ACTIVE"
-      ).length,
-    [ads]
-  )
+  const [showEditor, setShowEditor] =
+    useState(false)
 
-  const totalViews = useMemo(
-    () =>
-      ads.reduce(
-        (total, ad) =>
-          total +
-          Number(ad.views || 0),
-        0
-      ),
-    [ads]
-  )
+  const [loading, setLoading] =
+    useState(true)
 
-  const totalClicks = useMemo(
-    () =>
-      ads.reduce(
-        (total, ad) =>
-          total +
-          Number(ad.clicks || 0),
-        0
-      ),
-    [ads]
-  )
+  const [saving, setSaving] =
+    useState(false)
 
-  const ctr = useMemo(() => {
-    if (!totalViews) return 0
+  const [message, setMessage] =
+    useState("")
+
+  const [error, setError] =
+    useState("")
+
+  const isSuperAdmin =
+    admin?.role === "SUPER_ADMIN"
+
+  const activeAds = useMemo(() => {
+    return ads.filter(
+      (ad) =>
+        Boolean(ad?.active)
+    ).length
+  }, [ads])
+
+  const totalViews = useMemo(() => {
+    return ads.reduce(
+      (total, ad) =>
+        total +
+        Number(ad?.views || 0),
+      0
+    )
+  }, [ads])
+
+  const totalClicks = useMemo(() => {
+    return ads.reduce(
+      (total, ad) =>
+        total +
+        Number(ad?.clicks || 0),
+      0
+    )
+  }, [ads])
+
+  const totalCtr = useMemo(() => {
+    if (!totalViews) {
+      return "0.00"
+    }
 
     return (
       (totalClicks /
         totalViews) *
       100
     ).toFixed(2)
-  }, [totalViews, totalClicks])
+  }, [
+    totalViews,
+    totalClicks,
+  ])
+
+  async function loadAdmin() {
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      throw new Error(
+        userError?.message ||
+          "Authentication session missing."
+      )
+    }
+
+    const {
+      data,
+      error: adminError,
+    } = await supabase
+      .from("admin_users")
+      .select(
+        "id,user_id,role,active"
+      )
+      .eq("user_id", user.id)
+      .eq("active", true)
+      .maybeSingle()
+
+    if (adminError) {
+      throw new Error(
+        `Admin authorization failed: ${adminError.message}`
+      )
+    }
+
+    if (!data) {
+      throw new Error(
+        "No active admin record found."
+      )
+    }
+
+    const currentAdmin = {
+      ...data,
+      email: user.email,
+    }
+
+    setAdmin(currentAdmin)
+
+    return currentAdmin
+  }
 
   async function loadAds() {
     const {
@@ -212,6 +332,8 @@ export default function AdvertisingPage() {
     setError("")
 
     try {
+      await loadAdmin()
+
       await Promise.all([
         loadAds(),
         loadArticles(),
@@ -219,7 +341,7 @@ export default function AdvertisingPage() {
       ])
     } catch (err) {
       console.error(
-        "ADVERTISING LOAD ERROR:",
+        "ADS LOAD ERROR:",
         err
       )
 
@@ -246,28 +368,29 @@ export default function AdvertisingPage() {
     }))
   }
 
-  function resetForm() {
+  function resetEditor() {
     setEditingId(null)
 
     setForm({
       ...EMPTY_FORM,
+      countries: [],
       devices: [
-        "desktop",
         "mobile",
         "tablet",
+        "desktop",
       ],
     })
   }
 
   function closeEditor() {
     setShowEditor(false)
-    resetForm()
+    resetEditor()
     setMessage("")
     setError("")
   }
 
-  function openNewCampaign() {
-    resetForm()
+  function openNewAd() {
+    resetEditor()
     setMessage("")
     setError("")
     setShowEditor(true)
@@ -276,7 +399,7 @@ export default function AdvertisingPage() {
   function editAd(ad) {
     if (!isValidId(ad?.id)) {
       setError(
-        "This advertisement has an invalid ID. Refresh the page and try again."
+        "This advertisement has an invalid ID. Refresh the Ads list and try again."
       )
       return
     }
@@ -284,54 +407,153 @@ export default function AdvertisingPage() {
     setEditingId(ad.id)
 
     setForm({
-      name: ad.name || "",
-      advertiser_name:
-        ad.advertiser_name || "",
-      headline:
-        ad.headline || "",
-      description:
-        ad.description || "",
+      title:
+        ad.title || "",
       image_url:
         ad.image_url || "",
       target_url:
         ad.target_url || "",
+      alt_text:
+        ad.alt_text || "",
       placement:
-        ad.placement || "all",
+        ad.placement ||
+        "between_articles",
       article_id:
         ad.article_id || "",
       category_id:
         ad.category_id || "",
       countries:
-        Array.isArray(
+        normaliseCountries(
           ad.countries
-        )
-          ? ad.countries.join(", ")
-          : ad.countries || "",
+        ),
       devices:
-        Array.isArray(
+        normaliseDevices(
           ad.devices
-        )
-          ? ad.devices
-          : [
-              "desktop",
-              "mobile",
-              "tablet",
-            ],
+        ),
       start_at:
-        ad.start_at || "",
+        ad.start_at
+          ? String(
+              ad.start_at
+            ).slice(0, 16)
+          : "",
       end_at:
-        ad.end_at || "",
-      status:
-        ad.status || "ACTIVE",
+        ad.end_at
+          ? String(
+              ad.end_at
+            ).slice(0, 16)
+          : "",
+      active:
+        Boolean(ad.active),
     })
 
     setMessage("")
     setError("")
     setShowEditor(true)
   }
+
+  function toggleCountry(
+    country
+  ) {
+    setForm((current) => {
+      const countries =
+        normaliseCountries(
+          current.countries
+        )
+
+      const selected =
+        countries.includes(
+          country
+        )
+
+      return {
+        ...current,
+        countries: selected
+          ? countries.filter(
+              (item) =>
+                item !== country
+            )
+          : [
+              ...countries,
+              country,
+            ],
+      }
+    })
+  }
+
+  function toggleDevice(
+    device
+  ) {
+    setForm((current) => {
+      const devices =
+        normaliseDevices(
+          current.devices
+        )
+
+      const selected =
+        devices.includes(
+          device
+        )
+
+      return {
+        ...current,
+        devices: selected
+          ? devices.filter(
+              (item) =>
+                item !== device
+            )
+          : [
+              ...devices,
+              device,
+            ],
+      }
+    })
+  }
+
+  function toggleArticle(
+    articleId
+  ) {
+    setForm((current) => ({
+      ...current,
+      article_id:
+        current.article_id ===
+        articleId
+          ? ""
+          : articleId,
+    }))
+  }
+
+  function toggleCategory(
+    categoryId
+  ) {
+    setForm((current) => ({
+      ...current,
+      category_id:
+        current.category_id ===
+        categoryId
+          ? ""
+          : categoryId,
+    }))
+  }
+
+  function clearTargeting() {
+    setForm((current) => ({
+      ...current,
+      article_id: "",
+      category_id: "",
+    }))
+  }
   async function saveAd() {
     if (!admin) {
-      setError("Admin account has not loaded.")
+      setError(
+        "Admin account has not loaded."
+      )
+      return
+    }
+
+    if (!isSuperAdmin) {
+      setError(
+        "Only a SUPER_ADMIN can create or edit advertisements."
+      )
       return
     }
 
@@ -340,45 +562,119 @@ export default function AdvertisingPage() {
     setError("")
 
     try {
-      const title = form.title.trim()
+      const title =
+        form.title.trim()
+
+      const imageUrl =
+        form.image_url.trim()
+
+      const targetUrl =
+        form.target_url.trim()
 
       if (!title) {
-        throw new Error("Ad title is required.")
+        throw new Error(
+          "Advertisement title is required."
+        )
       }
 
-      if (!form.image_url?.trim()) {
-        throw new Error("Ad image URL is required.")
+      if (!imageUrl) {
+        throw new Error(
+          "Advertisement image URL is required."
+        )
       }
 
-      if (!form.target_url?.trim()) {
-        throw new Error("Ad destination URL is required.")
+      if (!targetUrl) {
+        throw new Error(
+          "Advertisement destination URL is required."
+        )
+      }
+
+      const countries =
+        normaliseCountries(
+          form.countries
+        )
+
+      const devices =
+        normaliseDevices(
+          form.devices
+        )
+
+      if (devices.length === 0) {
+        throw new Error(
+          "Select at least one device."
+        )
+      }
+
+      if (
+        form.start_at &&
+        form.end_at
+      ) {
+        const start =
+          new Date(
+            form.start_at
+          ).getTime()
+
+        const end =
+          new Date(
+            form.end_at
+          ).getTime()
+
+        if (
+          Number.isFinite(start) &&
+          Number.isFinite(end) &&
+          end <= start
+        ) {
+          throw new Error(
+            "End date must be later than the start date."
+          )
+        }
+      }
+
+      if (
+        form.article_id &&
+        !isValidId(
+          form.article_id
+        )
+      ) {
+        throw new Error(
+          "The selected article has an invalid ID."
+        )
+      }
+
+      if (
+        form.category_id &&
+        !isValidId(
+          form.category_id
+        )
+      ) {
+        throw new Error(
+          "The selected category has an invalid ID."
+        )
       }
 
       const payload = {
         title,
-        image_url: form.image_url.trim(),
-        target_url: form.target_url.trim(),
+        image_url: imageUrl,
+        target_url: targetUrl,
         alt_text:
-          form.alt_text?.trim() || null,
-
-        article_id:
-          form.article_id || null,
-
-        category_id:
-          form.category_id || null,
+          form.alt_text?.trim() ||
+          null,
 
         placement:
-          form.placement || "between_articles",
+          form.placement ||
+          "between_articles",
 
-        countries:
-          Array.isArray(form.countries)
-            ? form.countries
-            : [],
+        article_id:
+          form.article_id ||
+          null,
 
-        devices:
-          Array.isArray(form.devices)
-            ? form.devices
-            : [],
+        category_id:
+          form.category_id ||
+          null,
+
+        countries,
+
+        devices,
 
         active:
           Boolean(form.active),
@@ -398,7 +694,7 @@ export default function AdvertisingPage() {
       if (editingId) {
         if (!isValidId(editingId)) {
           throw new Error(
-            "This ad has an invalid ID. Refresh the Ads list and try again."
+            "This advertisement has an invalid ID. Refresh the Ads list and try again."
           )
         }
 
@@ -409,18 +705,18 @@ export default function AdvertisingPage() {
           .from("ads")
           .update(payload)
           .eq("id", editingId)
-          .select()
+          .select("*")
           .maybeSingle()
 
         if (updateError) {
           throw new Error(
-            `Could not update ad: ${updateError.message}`
+            `Could not update advertisement: ${updateError.message}`
           )
         }
 
         if (!data) {
           throw new Error(
-            "The ad could not be found for updating. Refresh the Ads list and try again."
+            "The advertisement could not be found for updating. Refresh the Ads list and try again."
           )
         }
 
@@ -432,12 +728,12 @@ export default function AdvertisingPage() {
         } = await supabase
           .from("ads")
           .insert(payload)
-          .select()
+          .select("*")
           .single()
 
         if (insertError) {
           throw new Error(
-            `Could not create ad: ${insertError.message}`
+            `Could not create advertisement: ${insertError.message}`
           )
         }
 
@@ -446,22 +742,25 @@ export default function AdvertisingPage() {
 
       if (!saved?.id) {
         throw new Error(
-          "The ad was saved but the database did not return a valid ad ID."
+          "The advertisement was saved but the database did not return a valid ID."
         )
       }
 
-      const wasEditing = Boolean(editingId)
+      const wasEditing =
+        Boolean(editingId)
 
       setMessage(
         wasEditing
-          ? "Ad updated successfully."
-          : "Ad created successfully."
+          ? "Advertisement updated successfully."
+          : "Advertisement created successfully."
       )
 
       setShowEditor(false)
       resetEditor()
 
       await loadAds()
+
+      router.refresh()
     } catch (err) {
       console.error(
         "AD SAVE ERROR:",
@@ -470,7 +769,7 @@ export default function AdvertisingPage() {
 
       setError(
         err?.message ||
-          "Could not save ad."
+          "Could not save advertisement."
       )
     } finally {
       setSaving(false)
@@ -480,32 +779,33 @@ export default function AdvertisingPage() {
   async function deleteAd(id) {
     if (!isSuperAdmin) {
       setError(
-        "Only a SUPER_ADMIN can delete ads."
+        "Only a SUPER_ADMIN can delete advertisements."
       )
       return
     }
 
     if (!isValidId(id)) {
       setError(
-        "This ad has an invalid ID and cannot be deleted. Refresh the Ads list."
+        "This advertisement has an invalid ID and cannot be deleted. Refresh the Ads list."
       )
       return
     }
 
     const ad = ads.find(
-      (item) => item.id === id
+      (item) =>
+        item.id === id
     )
 
     if (!ad) {
       setError(
-        "Ad not found. Refresh the Ads list and try again."
+        "Advertisement not found. Refresh the Ads list and try again."
       )
       return
     }
 
     const confirmed =
       window.confirm(
-        `Delete "${ad.title || "this ad"}" permanently?`
+        `Delete "${ad.title || "this advertisement"}" permanently?`
       )
 
     if (!confirmed) {
@@ -527,21 +827,23 @@ export default function AdvertisingPage() {
 
       if (deleteError) {
         throw new Error(
-          `Could not delete ad: ${deleteError.message}`
+          `Could not delete advertisement: ${deleteError.message}`
         )
       }
 
       if (!deletedRows?.length) {
         throw new Error(
-          "The ad was not deleted. It may no longer exist or you may not have permission to delete it."
+          "The advertisement was not deleted. It may no longer exist or you may not have permission to delete it."
         )
       }
 
       setMessage(
-        "Ad deleted successfully."
+        "Advertisement deleted successfully."
       )
 
       await loadAds()
+
+      router.refresh()
     } catch (err) {
       console.error(
         "AD DELETE ERROR:",
@@ -550,22 +852,22 @@ export default function AdvertisingPage() {
 
       setError(
         err?.message ||
-          "Could not delete ad."
+          "Could not delete advertisement."
       )
     }
   }
 
-  async function toggleAd(ad) {
+  async function toggleActive(ad) {
     if (!isSuperAdmin) {
       setError(
-        "Only a SUPER_ADMIN can activate or deactivate ads."
+        "Only a SUPER_ADMIN can activate or deactivate advertisements."
       )
       return
     }
 
     if (!isValidId(ad?.id)) {
       setError(
-        "This ad has an invalid ID. Refresh the Ads list and try again."
+        "This advertisement has an invalid ID. Refresh the Ads list and try again."
       )
       return
     }
@@ -574,39 +876,46 @@ export default function AdvertisingPage() {
     setMessage("")
 
     try {
+      const newActive =
+        !Boolean(ad.active)
+
       const {
         data,
         error: updateError,
       } = await supabase
         .from("ads")
         .update({
-          active: !Boolean(ad.active),
+          active: newActive,
           updated_at:
             new Date().toISOString(),
         })
         .eq("id", ad.id)
-        .select("id,active")
+        .select(
+          "id,active"
+        )
         .maybeSingle()
 
       if (updateError) {
         throw new Error(
-          `Could not change ad status: ${updateError.message}`
+          `Could not change advertisement status: ${updateError.message}`
         )
       }
 
       if (!data) {
         throw new Error(
-          "The ad could not be found."
+          "The advertisement could not be found."
         )
       }
 
       setMessage(
         data.active
-          ? "Ad activated."
-          : "Ad deactivated."
+          ? "Advertisement activated."
+          : "Advertisement deactivated."
       )
 
       await loadAds()
+
+      router.refresh()
     } catch (err) {
       console.error(
         "AD STATUS ERROR:",
@@ -615,147 +924,127 @@ export default function AdvertisingPage() {
 
       setError(
         err?.message ||
-          "Could not change ad status."
+          "Could not change advertisement status."
       )
     }
   }
 
-  function toggleCountry(country) {
-    setForm((current) => {
-      const currentCountries =
-        Array.isArray(
-          current.countries
-        )
-          ? current.countries
-          : []
-
-      const exists =
-        currentCountries.includes(
-          country
-        )
-
-      return {
-        ...current,
-        countries: exists
-          ? currentCountries.filter(
-              (item) =>
-                item !== country
-            )
-          : [
-              ...currentCountries,
-              country,
-            ],
-      }
-    })
+  function getPlacementLabel(
+    placement
+  ) {
+    return (
+      PLACEMENT_OPTIONS.find(
+        (item) =>
+          item.value ===
+          placement
+      )?.label ||
+      placement ||
+      "All placements"
+    )
   }
 
-  function toggleDevice(device) {
-    setForm((current) => {
-      const currentDevices =
-        Array.isArray(
-          current.devices
-        )
-          ? current.devices
-          : []
+  function getArticleTitle(
+    articleId
+  ) {
+    if (!articleId) {
+      return ""
+    }
 
-      const exists =
-        currentDevices.includes(
-          device
-        )
-
-      return {
-        ...current,
-        devices: exists
-          ? currentDevices.filter(
-              (item) =>
-                item !== device
-            )
-          : [
-              ...currentDevices,
-              device,
-            ],
-      }
-    })
+    return (
+      articles.find(
+        (article) =>
+          article.id ===
+          articleId
+      )?.title ||
+      ""
+    )
   }
 
-  function toggleArticle(articleId) {
-    setForm((current) => ({
-      ...current,
-      article_id:
-        current.article_id ===
-        articleId
-          ? null
-          : articleId,
-    }))
+  function getCategoryName(
+    categoryId
+  ) {
+    if (!categoryId) {
+      return ""
+    }
+
+    return (
+      categories.find(
+        (category) =>
+          category.id ===
+          categoryId
+      )?.name ||
+      ""
+    )
   }
 
-  function toggleCategory(categoryId) {
-    setForm((current) => ({
-      ...current,
-      category_id:
-        current.category_id ===
-        categoryId
-          ? null
-          : categoryId,
-    }))
+  function renderStats() {
+    return (
+      <div
+        className="grid grid3"
+        style={{
+          marginTop: "18px",
+        }}
+      >
+        <div className="card">
+          <div className="muted">
+            Active Ads
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {activeAds}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="muted">
+            Total Views
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {totalViews.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="muted">
+            Clicks / CTR
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {totalClicks.toLocaleString()}
+          </div>
+
+          <div
+            className="muted"
+            style={{
+              marginTop: "4px",
+            }}
+          >
+            {totalCtr}%
+          </div>
+        </div>
+      </div>
+    )
   }
-
-  function clearTargeting() {
-    setForm((current) => ({
-      ...current,
-      article_id: null,
-      category_id: null,
-    }))
-  }
-
-  const countryOptions = [
-    "NG",
-    "GH",
-    "KE",
-    "ZA",
-    "US",
-    "GB",
-    "CA",
-    "AU",
-    "DE",
-    "FR",
-    "IN",
-    "AE",
-  ]
-
-  const deviceOptions = [
-    "mobile",
-    "tablet",
-    "desktop",
-  ]
-
-  const placementOptions = [
-    {
-      value: "between_articles",
-      label: "Between Articles",
-    },
-    {
-      value: "article_top",
-      label: "Top of Article",
-    },
-    {
-      value: "article_bottom",
-      label: "Bottom of Article",
-    },
-    {
-      value: "category_top",
-      label: "Top of Category",
-    },
-    {
-      value: "category_bottom",
-      label: "Bottom of Category",
-    },
-    {
-      value: "homepage",
-      label: "Homepage",
-    },
-  ]
-  if (loading) {
+if (loading) {
     return (
       <main
         style={{
@@ -781,8 +1070,7 @@ export default function AdvertisingPage() {
             </h1>
 
             <p className="muted">
-              Signed in as{" "}
-              {admin?.email}
+              Signed in as {admin?.email}
             </p>
           </div>
 
@@ -836,26 +1124,92 @@ export default function AdvertisingPage() {
 
             <label
               style={{
+                display: "block",
                 marginTop: "16px",
               }}
             >
-              Ad Title
+              Advertisement Name
             </label>
 
             <input
               className="input"
-              value={form.title}
+              value={form.name}
               onChange={(event) =>
                 updateField(
-                  "title",
+                  "name",
                   event.target.value
                 )
               }
-              placeholder="Advertisement title"
+              placeholder="Campaign name"
             />
 
             <label
               style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Advertiser Name
+            </label>
+
+            <input
+              className="input"
+              value={form.advertiser_name}
+              onChange={(event) =>
+                updateField(
+                  "advertiser_name",
+                  event.target.value
+                )
+              }
+              placeholder="Advertiser or company name"
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Headline
+            </label>
+
+            <input
+              className="input"
+              value={form.headline}
+              onChange={(event) =>
+                updateField(
+                  "headline",
+                  event.target.value
+                )
+              }
+              placeholder="Advertisement headline"
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Description
+            </label>
+
+            <textarea
+              className="input"
+              rows="4"
+              value={form.description}
+              onChange={(event) =>
+                updateField(
+                  "description",
+                  event.target.value
+                )
+              }
+              placeholder="Short advertisement description"
+            />
+
+            <label
+              style={{
+                display: "block",
                 marginTop: "16px",
               }}
             >
@@ -887,8 +1241,8 @@ export default function AdvertisingPage() {
                 <img
                   src={form.image_url}
                   alt={
-                    form.alt_text ||
-                    form.title ||
+                    form.headline ||
+                    form.name ||
                     "Advertisement preview"
                   }
                   style={{
@@ -907,6 +1261,7 @@ export default function AdvertisingPage() {
 
             <label
               style={{
+                display: "block",
                 marginTop: "16px",
               }}
             >
@@ -925,26 +1280,6 @@ export default function AdvertisingPage() {
               placeholder="https://example.com"
             />
 
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Alt Text
-            </label>
-
-            <input
-              className="input"
-              value={form.alt_text}
-              onChange={(event) =>
-                updateField(
-                  "alt_text",
-                  event.target.value
-                )
-              }
-              placeholder="Describe the advertisement image"
-            />
-
             <h2
               className="h2"
               style={{
@@ -956,10 +1291,12 @@ export default function AdvertisingPage() {
 
             <label
               style={{
+                display: "block",
                 marginTop: "16px",
               }}
             >
-              Where should this ad appear?
+              Where should this advertisement
+              appear?
             </label>
 
             <select
@@ -972,13 +1309,13 @@ export default function AdvertisingPage() {
                 )
               }
             >
-              {placementOptions.map(
-                (option) => (
+              {PLACEMENTS.map(
+                (placement) => (
                   <option
-                    key={option.value}
-                    value={option.value}
+                    key={placement.value}
+                    value={placement.value}
                   >
-                    {option.label}
+                    {placement.label}
                   </option>
                 )
               )}
@@ -990,7 +1327,7 @@ export default function AdvertisingPage() {
                 marginTop: "28px",
               }}
             >
-              Target Articles
+              Target Article
             </h2>
 
             <p
@@ -999,10 +1336,9 @@ export default function AdvertisingPage() {
                 marginTop: "6px",
               }}
             >
-              Select an article if this
-              advertisement should be
-              shown specifically on that
-              article.
+              Optionally select one article
+              where this advertisement should
+              appear.
             </p>
 
             {articles.length === 0 ? (
@@ -1025,51 +1361,53 @@ export default function AdvertisingPage() {
                 }}
               >
                 {articles.map(
-                  (article) => (
-                    <button
-                      key={article.id}
-                      type="button"
-                      onClick={() =>
-                        toggleArticle(
-                          article.id
-                        )
-                      }
-                      style={{
-                        textAlign: "left",
-                        border:
-                          form.article_id ===
-                          article.id
+                  (article) => {
+                    const selected =
+                      form.article_id ===
+                      article.id
+
+                    return (
+                      <button
+                        key={article.id}
+                        type="button"
+                        onClick={() =>
+                          toggleArticle(
+                            article.id
+                          )
+                        }
+                        style={{
+                          textAlign: "left",
+                          border: selected
                             ? "2px solid #111"
                             : "1px solid #ddd",
-                        borderRadius:
-                          "10px",
-                        padding: "12px",
-                        background:
-                          form.article_id ===
-                          article.id
+                          borderRadius:
+                            "10px",
+                          padding: "12px",
+                          background: selected
                             ? "#f5f5f5"
                             : "white",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <strong>
-                        {article.title ||
-                          "Untitled article"}
-                      </strong>
-
-                      <div
-                        className="muted"
-                        style={{
-                          marginTop: "4px",
-                          fontSize: "13px",
+                          cursor: "pointer",
                         }}
                       >
-                        {article.slug
-                          ? `/${article.slug}`
-                          : ""}
-                      </div>
-                    </button>
-                  )
+                        <strong>
+                          {article.title ||
+                            "Untitled article"}
+                        </strong>
+
+                        {article.slug && (
+                          <div
+                            className="muted"
+                            style={{
+                              marginTop: "4px",
+                              fontSize: "13px",
+                            }}
+                          >
+                            /{article.slug}
+                          </div>
+                        )}
+                      </button>
+                    )
+                  }
                 )}
               </div>
             )}
@@ -1089,10 +1427,9 @@ export default function AdvertisingPage() {
                 marginTop: "6px",
               }}
             >
-              Select a category if this
-              advertisement should be
-              displayed within that
-              category.
+              Optionally select one category
+              where this advertisement should
+              appear.
             </p>
 
             {categories.length === 0 ? (
@@ -1114,43 +1451,43 @@ export default function AdvertisingPage() {
                 }}
               >
                 {categories.map(
-                  (category) => (
-                    <button
-                      key={category.id}
-                      type="button"
-                      onClick={() =>
-                        toggleCategory(
-                          category.id
-                        )
-                      }
-                      style={{
-                        border:
-                          form.category_id ===
-                          category.id
+                  (category) => {
+                    const selected =
+                      form.category_id ===
+                      category.id
+
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        onClick={() =>
+                          toggleCategory(
+                            category.id
+                          )
+                        }
+                        style={{
+                          border: selected
                             ? "2px solid #111"
                             : "1px solid #ddd",
-                        borderRadius:
-                          "999px",
-                        padding:
-                          "8px 12px",
-                        background:
-                          form.category_id ===
-                          category.id
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "8px 12px",
+                          background: selected
                             ? "#111"
                             : "white",
-                        color:
-                          form.category_id ===
-                          category.id
+                          color: selected
                             ? "white"
                             : "#111",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {category.name ||
-                        category.title ||
-                        "Unnamed category"}
-                    </button>
-                  )
+                          cursor: "pointer",
+                        }}
+                      >
+                        {category.name ||
+                          category.title ||
+                          "Unnamed category"}
+                      </button>
+                    )
+                  }
                 )}
               </div>
             )}
@@ -1163,9 +1500,7 @@ export default function AdvertisingPage() {
                 style={{
                   marginTop: "12px",
                 }}
-                onClick={
-                  clearTargeting
-                }
+                onClick={clearTargeting}
               >
                 Clear Article/Category
               </button>
@@ -1183,9 +1518,9 @@ export default function AdvertisingPage() {
                 marginTop: "8px",
               }}
             >
-              Ads will only be shown
-              when the visitor matches
-              your selected targeting.
+              The advertisement will only
+              appear when the visitor matches
+              the selected targeting rules.
             </p>
 
             <h3
@@ -1203,9 +1538,10 @@ export default function AdvertisingPage() {
                 fontSize: "13px",
               }}
             >
-              Leave all countries
-              unselected to allow the
-              advertisement everywhere.
+              Select the countries where this
+              advertisement is allowed to
+              appear. Leave empty for all
+              countries.
             </p>
 
             <div
@@ -1216,51 +1552,57 @@ export default function AdvertisingPage() {
                 marginTop: "10px",
               }}
             >
-              {countryOptions.map(
-                (country) => {
-                  const selected =
-                    form.countries.includes(
-                      country
-                    )
-
-                  return (
-                    <button
-                      key={country}
-                      type="button"
-                      onClick={() =>
-                        toggleCountry(
-                          country
-                        )
-                      }
-                      style={{
-                        border:
-                          selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
-                        borderRadius:
-                          "999px",
-                        padding:
-                          "7px 10px",
-                        background:
-                          selected
-                            ? "#111"
-                            : "white",
-                        color:
-                          selected
-                            ? "white"
-                            : "#111",
-                        cursor: "pointer",
-                        fontSize:
-                          "12px",
-                        fontWeight:
-                          600,
-                      }}
-                    >
-                      {country}
-                    </button>
+              {[
+                "NG",
+                "GH",
+                "KE",
+                "ZA",
+                "US",
+                "GB",
+                "CA",
+                "AU",
+                "DE",
+                "FR",
+                "IN",
+                "AE",
+              ].map((country) => {
+                const selected =
+                  form.countries.includes(
+                    country
                   )
-                }
-              )}
+
+                return (
+                  <button
+                    key={country}
+                    type="button"
+                    onClick={() =>
+                      toggleCountry(
+                        country
+                      )
+                    }
+                    style={{
+                      border: selected
+                        ? "2px solid #111"
+                        : "1px solid #ddd",
+                      borderRadius:
+                        "999px",
+                      padding:
+                        "7px 10px",
+                      background: selected
+                        ? "#111"
+                        : "white",
+                      color: selected
+                        ? "white"
+                        : "#111",
+                      cursor: "pointer",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {country}
+                  </button>
+                )
+              })}
             </div>
 
             <h3
@@ -1278,9 +1620,9 @@ export default function AdvertisingPage() {
                 fontSize: "13px",
               }}
             >
-              Select the devices where
-              this advertisement is allowed
-              to appear.
+              Select the devices where this
+              advertisement is allowed to
+              appear.
             </p>
 
             <div
@@ -1290,47 +1632,39 @@ export default function AdvertisingPage() {
                 marginTop: "10px",
               }}
             >
-              {deviceOptions.map(
-                (device) => {
-                  const selected =
-                    form.devices.includes(
-                      device
-                    )
-
-                  return (
-                    <label
-                      key={device}
-                      style={{
-                        display: "flex",
-                        gap: "8px",
-                        alignItems:
-                          "center",
-                        cursor: "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={
-                          selected
-                        }
-                        onChange={() =>
-                          toggleDevice(
-                            device
-                          )
-                        }
-                      />
-
-                      {device
-                        .charAt(0)
-                        .toUpperCase() +
-                        device.slice(1)}
-                    </label>
+              {DEVICES.map((device) => {
+                const selected =
+                  form.devices.includes(
+                    device.value
                   )
-                }
-              )}
-            </div>
 
-            <h3
+                return (
+                  <label
+                    key={device.value}
+                    style={{
+                      display: "flex",
+                      gap: "8px",
+                      alignItems:
+                        "center",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() =>
+                        toggleDevice(
+                          device.value
+                        )
+                      }
+                    />
+
+                    {device.label}
+                  </label>
+                )
+              })}
+            </div>
+<h3
               style={{
                 marginTop: "24px",
               }}
@@ -1340,6 +1674,7 @@ export default function AdvertisingPage() {
 
             <label
               style={{
+                display: "block",
                 marginTop: "12px",
               }}
             >
@@ -1349,9 +1684,7 @@ export default function AdvertisingPage() {
             <input
               className="input"
               type="datetime-local"
-              value={
-                form.start_at
-              }
+              value={form.start_at}
               onChange={(event) =>
                 updateField(
                   "start_at",
@@ -1362,6 +1695,7 @@ export default function AdvertisingPage() {
 
             <label
               style={{
+                display: "block",
                 marginTop: "12px",
               }}
             >
@@ -1371,9 +1705,7 @@ export default function AdvertisingPage() {
             <input
               className="input"
               type="datetime-local"
-              value={
-                form.end_at
-              }
+              value={form.end_at}
               onChange={(event) =>
                 updateField(
                   "end_at",
@@ -1388,17 +1720,20 @@ export default function AdvertisingPage() {
                 gap: "8px",
                 alignItems: "center",
                 marginTop: "18px",
+                cursor: "pointer",
               }}
             >
               <input
                 type="checkbox"
                 checked={
-                  form.active
+                  form.status === "ACTIVE"
                 }
                 onChange={(event) =>
                   updateField(
-                    "active",
+                    "status",
                     event.target.checked
+                      ? "ACTIVE"
+                      : "INACTIVE"
                   )
                 }
               />
@@ -1440,6 +1775,7 @@ export default function AdvertisingPage() {
       </main>
     )
   }
+
   return (
     <main>
       <div className="row spread">
@@ -1487,6 +1823,70 @@ export default function AdvertisingPage() {
       )}
 
       <div
+        className="grid grid3"
+        style={{
+          marginTop: "18px",
+        }}
+      >
+        <div className="card">
+          <div className="muted">
+            Active Ads
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {activeAds}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="muted">
+            Total Views
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {totalViews.toLocaleString()}
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="muted">
+            Clicks / CTR
+          </div>
+
+          <div
+            style={{
+              fontSize: "28px",
+              fontWeight: 700,
+              marginTop: "6px",
+            }}
+          >
+            {totalClicks.toLocaleString()}
+          </div>
+
+          <div
+            className="muted"
+            style={{
+              marginTop: "4px",
+            }}
+          >
+            CTR: {ctr}%
+          </div>
+        </div>
+      </div>
+
+      <div
         className="card"
         style={{
           marginTop: "18px",
@@ -1514,12 +1914,36 @@ export default function AdvertisingPage() {
               const validId =
                 isValidId(ad?.id)
 
+              const placementLabel =
+                PLACEMENTS.find(
+                  (item) =>
+                    item.value ===
+                    ad.placement
+                )?.label ||
+                ad.placement ||
+                "All placements"
+
+              const adViews =
+                Number(ad.views || 0)
+
+              const adClicks =
+                Number(ad.clicks || 0)
+
+              const adCtr =
+                adViews > 0
+                  ? (
+                      (adClicks /
+                        adViews) *
+                      100
+                    ).toFixed(2)
+                  : "0.00"
+
               return (
                 <article
                   key={
                     validId
                       ? ad.id
-                      : `${ad.title}-${ad.slug || ""}`
+                      : `${ad.name || "ad"}-${ad.created_at || Math.random()}`
                   }
                   style={{
                     border:
@@ -1541,9 +1965,22 @@ export default function AdvertisingPage() {
                           margin: 0,
                         }}
                       >
-                        {ad.title ||
+                        {ad.name ||
+                          ad.headline ||
                           "Untitled advertisement"}
                       </h2>
+
+                      {ad.advertiser_name && (
+                        <div
+                          className="muted"
+                          style={{
+                            marginTop: "5px",
+                          }}
+                        >
+                          Advertiser:{" "}
+                          {ad.advertiser_name}
+                        </div>
+                      )}
 
                       <div
                         className="muted"
@@ -1553,13 +1990,7 @@ export default function AdvertisingPage() {
                         }}
                       >
                         Placement:{" "}
-                        {placementOptions.find(
-                          (item) =>
-                            item.value ===
-                            ad.placement
-                        )?.label ||
-                          ad.placement ||
-                          "All placements"}
+                        {placementLabel}
                       </div>
 
                       <div
@@ -1582,7 +2013,8 @@ export default function AdvertisingPage() {
                               "12px",
                           }}
                         >
-                          {ad.active
+                          {ad.status ===
+                          "ACTIVE"
                             ? "ACTIVE"
                             : "INACTIVE"}
                         </span>
@@ -1683,43 +2115,49 @@ export default function AdvertisingPage() {
                         <span className="muted">
                           Views:{" "}
                           <strong>
-                            {Number(
-                              ad.views || 0
-                            ).toLocaleString()}
+                            {adViews.toLocaleString()}
                           </strong>
                         </span>
 
                         <span className="muted">
                           Clicks:{" "}
                           <strong>
-                            {Number(
-                              ad.clicks || 0
-                            ).toLocaleString()}
+                            {adClicks.toLocaleString()}
                           </strong>
                         </span>
 
                         <span className="muted">
                           CTR:{" "}
                           <strong>
-                            {Number(
-                              ad.views || 0
-                            ) > 0
-                              ? (
-                                  (Number(
-                                    ad.clicks ||
-                                      0
-                                  ) /
-                                    Number(
-                                      ad.views ||
-                                        0
-                                    )) *
-                                  100
-                                ).toFixed(2)
-                              : "0.00"}
-                            %
+                            {adCtr}%
                           </strong>
                         </span>
                       </div>
+
+                      {(ad.start_at ||
+                        ad.end_at) && (
+                        <div
+                          className="muted"
+                          style={{
+                            marginTop: "10px",
+                            fontSize: "13px",
+                          }}
+                        >
+                          {ad.start_at
+                            ? `Starts: ${formatDate(
+                                ad.start_at
+                              )}`
+                            : "No start date"}
+
+                          {" · "}
+
+                          {ad.end_at
+                            ? `Ends: ${formatDate(
+                                ad.end_at
+                              )}`
+                            : "No end date"}
+                        </div>
+                      )}
                     </div>
 
                     <div
@@ -1748,10 +2186,11 @@ export default function AdvertisingPage() {
                         className="btn"
                         disabled={!validId}
                         onClick={() =>
-                          toggleActive(ad)
+                          toggleAd(ad)
                         }
                       >
-                        {ad.active
+                        {ad.status ===
+                        "ACTIVE"
                           ? "Deactivate"
                           : "Activate"}
                       </button>
@@ -1783,7 +2222,8 @@ export default function AdvertisingPage() {
                         src={ad.image_url}
                         alt={
                           ad.alt_text ||
-                          ad.title ||
+                          ad.headline ||
+                          ad.name ||
                           "Advertisement"
                         }
                         style={{
@@ -1794,6 +2234,17 @@ export default function AdvertisingPage() {
                         }}
                       />
                     </div>
+                  )}
+
+                  {ad.description && (
+                    <p
+                      className="muted"
+                      style={{
+                        marginTop: "12px",
+                      }}
+                    >
+                      {ad.description}
+                    </p>
                   )}
                 </article>
               )
