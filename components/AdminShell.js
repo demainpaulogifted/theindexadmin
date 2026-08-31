@@ -12,6 +12,7 @@ const links = [
   ["/submissions", "Submissions"],
   ["/businesses", "Businesses"],
   ["/ads", "Advertising"],
+  ["/analytics", "Analytics"],
   ["/advertisers", "Advertisers"],
   ["/packages", "Ad Packages"],
   ["/payments", "Payments"],
@@ -179,8 +180,12 @@ export default function AdminShell({ children }) {
 
           <button
             className="btn"
-            style={{ marginTop: "20px" }}
-            onClick={() => router.replace("/login")}
+            style={{
+              marginTop: "20px",
+            }}
+            onClick={() =>
+              router.replace("/login")
+            }
           >
             Return to Login
           </button>
@@ -199,6 +204,7 @@ export default function AdminShell({ children }) {
         <div className="brand">
           THE INDEX
           <br />
+
           <span
             style={{
               fontSize: "12px",
@@ -238,7 +244,10 @@ export default function AdminShell({ children }) {
       <section className="main">
         <header className="topbar">
           <div>
-            <strong>{admin.email}</strong>{" "}
+            <strong>
+              {admin.email}
+            </strong>{" "}
+
             <span className="badge">
               {admin.role}
             </span>
