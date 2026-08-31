@@ -36,60 +36,26 @@ const COUNTRY_OPTIONS = [
 ]
 
 const DEVICE_OPTIONS = [
-  {
-    value: "mobile",
-    label: "Mobile",
-  },
-  {
-    value: "tablet",
-    label: "Tablet",
-  },
-  {
-    value: "desktop",
-    label: "Desktop",
-  },
+  { value: "mobile", label: "Mobile" },
+  { value: "tablet", label: "Tablet" },
+  { value: "desktop", label: "Desktop" },
 ]
 
 const PLACEMENT_OPTIONS = [
-  {
-    value: "between_articles",
-    label: "Between Articles",
-  },
-  {
-    value: "article_top",
-    label: "Top of Article",
-  },
-  {
-    value: "article_bottom",
-    label: "Bottom of Article",
-  },
-  {
-    value: "category_top",
-    label: "Top of Category",
-  },
-  {
-    value: "category_bottom",
-    label: "Bottom of Category",
-  },
-  {
-    value: "homepage",
-    label: "Homepage",
-  },
+  { value: "between_articles", label: "Between Articles" },
+  { value: "article_top", label: "Top of Article" },
+  { value: "article_bottom", label: "Bottom of Article" },
+  { value: "category_top", label: "Top of Category" },
+  { value: "category_bottom", label: "Bottom of Category" },
+  { value: "homepage", label: "Homepage" },
 ]
 
 function isValidId(id) {
-  return Boolean(
-    id &&
-      id !== "null" &&
-      id !== "undefined"
-  )
+  return Boolean(id && id !== "null" && id !== "undefined")
 }
 
 function formatDate(value) {
-  if (!value) {
-    return "—"
-  }
-
+  if (!value) return "—"
   try {
     return new Date(value).toLocaleString()
   } catch {
@@ -98,37 +64,29 @@ function formatDate(value) {
 }
 
 function normaliseCountries(value) {
-  if (Array.isArray(value)) {
-    return value
-  }
-
+  if (Array.isArray(value)) return value
   if (typeof value === "string") {
     return value
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean)
   }
-
   return []
 }
 
 function normaliseDevices(value) {
-  if (Array.isArray(value)) {
-    return value
-  }
-
+  if (Array.isArray(value)) return value
   if (typeof value === "string") {
     return value
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean)
   }
+  return ["mobile", "tablet", "desktop"]
+}
 
-  return [
-    "mobile",
-    "tablet",
-    "desktop",
-  ]
+function getCountryLabel(code) {
+  return COUNTRY_OPTIONS.find((c) => c.value === code)?.label || code
 }
 
 export default function AdvertisingPage() {
@@ -140,11 +98,7 @@ export default function AdvertisingPage() {
   const [form, setForm] = useState({
     ...EMPTY_FORM,
     countries: [],
-    devices: [
-      "mobile",
-      "tablet",
-      "desktop",
-    ],
+    devices: ["mobile", "tablet", "desktop"],
   })
 
   const [editingId, setEditingId] = useState(null)
@@ -156,77 +110,50 @@ export default function AdvertisingPage() {
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
-  const isSuperAdmin =
-    admin?.role === "SUPER_ADMIN"
+  const isSuperAdmin = admin?.role === "SUPER_ADMIN"
 
-  const activeAds = useMemo(() => {
-    return ads.filter(
-      (ad) => Boolean(ad?.active)
-    ).length
-  }, [ads])
+  const activeAds = useMemo(
+    () => ads.filter((ad) => Boolean(ad?.active)).length,
+    [ads]
+  )
 
-  const totalViews = useMemo(() => {
-    return ads.reduce(
-      (total, ad) =>
-        total + Number(ad?.views || 0),
-      0
-    )
-  }, [ads])
+  const totalViews = useMemo(
+    () => ads.reduce((total, ad) => total + Number(ad?.views || 0), 0),
+    [ads]
+  )
 
-  const totalClicks = useMemo(() => {
-    return ads.reduce(
-      (total, ad) =>
-        total + Number(ad?.clicks || 0),
-      0
-    )
-  }, [ads])
+  const totalClicks = useMemo(
+    () => ads.reduce((total, ad) => total + Number(ad?.clicks || 0), 0),
+    [ads]
+  )
 
   const totalCtr = useMemo(() => {
-    if (!totalViews) {
-      return "0.00"
-    }
-
-    return (
-      (totalClicks / totalViews) *
-      100
-    ).toFixed(2)
+    if (!totalViews) return "0.00"
+    return ((totalClicks / totalViews) * 100).toFixed(2)
   }, [totalViews, totalClicks])
-
-  async function loadAdmin() {
+async function loadAdmin() {
     const {
       data: { user },
       error: userError,
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      throw new Error(
-        userError?.message ||
-          "Authentication session missing."
-      )
+      throw new Error(userError?.message || "Authentication session missing.")
     }
 
-    const {
-      data,
-      error: adminError,
-    } = await supabase
+    const { data, error: adminError } = await supabase
       .from("admin_users")
-      .select(
-        "id,user_id,role,active"
-      )
+      .select("id,user_id,role,active")
       .eq("user_id", user.id)
       .eq("active", true)
       .maybeSingle()
 
     if (adminError) {
-      throw new Error(
-        `Admin authorization failed: ${adminError.message}`
-      )
+      throw new Error(`Admin authorization failed: ${adminError.message}`)
     }
 
     if (!data) {
-      throw new Error(
-        "No active admin record found."
-      )
+      throw new Error("No active admin record found.")
     }
 
     const currentAdmin = {
@@ -235,49 +162,30 @@ export default function AdvertisingPage() {
     }
 
     setAdmin(currentAdmin)
-
     return currentAdmin
   }
 
   async function loadAds() {
-    const {
-      data,
-      error: adsError,
-    } = await supabase
+    const { data, error: adsError } = await supabase
       .from("ads")
       .select("*")
-      .order("created_at", {
-        ascending: false,
-      })
+      .order("created_at", { ascending: false })
 
     if (adsError) {
-      throw new Error(
-        `Could not load advertisements: ${adsError.message}`
-      )
+      throw new Error(`Could not load advertisements: ${adsError.message}`)
     }
 
     setAds(data || [])
   }
 
   async function loadArticles() {
-    const {
-      data,
-      error: articlesError,
-    } = await supabase
+    const { data, error: articlesError } = await supabase
       .from("articles")
-      .select(
-        "id,title,slug"
-      )
-      .order("title", {
-        ascending: true,
-      })
+      .select("id,title,slug")
+      .order("title", { ascending: true })
 
     if (articlesError) {
-      console.warn(
-        "Could not load articles:",
-        articlesError.message
-      )
-
+      console.warn("Could not load articles:", articlesError.message)
       setArticles([])
       return
     }
@@ -286,24 +194,13 @@ export default function AdvertisingPage() {
   }
 
   async function loadCategories() {
-    const {
-      data,
-      error: categoriesError,
-    } = await supabase
+    const { data, error: categoriesError } = await supabase
       .from("categories")
-      .select(
-        "id,name,slug"
-      )
-      .order("name", {
-        ascending: true,
-      })
+      .select("id,name,slug")
+      .order("name", { ascending: true })
 
     if (categoriesError) {
-      console.warn(
-        "Could not load categories:",
-        categoriesError.message
-      )
-
+      console.warn("Could not load categories:", categoriesError.message)
       setCategories([])
       return
     }
@@ -323,15 +220,8 @@ export default function AdvertisingPage() {
         loadCategories(),
       ])
     } catch (err) {
-      console.error(
-        "ADVERTISING LOAD ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not load advertising."
-      )
+      console.error("ADVERTISING LOAD ERROR:", err)
+      setError(err?.message || "Could not load advertising.")
     } finally {
       setLoading(false)
     }
@@ -341,10 +231,7 @@ export default function AdvertisingPage() {
     loadData()
   }, [])
 
-  function updateField(
-    field,
-    value
-  ) {
+  function updateField(field, value) {
     setForm((current) => ({
       ...current,
       [field]: value,
@@ -353,15 +240,10 @@ export default function AdvertisingPage() {
 
   function resetForm() {
     setEditingId(null)
-
     setForm({
       ...EMPTY_FORM,
       countries: [],
-      devices: [
-        "mobile",
-        "tablet",
-        "desktop",
-      ],
+      devices: ["mobile", "tablet", "desktop"],
     })
   }
 
@@ -391,37 +273,19 @@ export default function AdvertisingPage() {
 
     setForm({
       title: ad.title || "",
-      advertiser_name:
-        ad.advertiser_name || "",
-      description:
-        ad.description || "",
-      image_url:
-        ad.image_url || "",
-      target_url:
-        ad.target_url || "",
-      alt_text:
-        ad.alt_text || "",
-      placement:
-        ad.placement ||
-        "between_articles",
-      article_id:
-        ad.article_id || "",
-      category_id:
-        ad.category_id || "",
-      countries:
-        normaliseCountries(
-          ad.countries
-        ),
-      devices:
-        normaliseDevices(
-          ad.devices
-        ),
-      start_at:
-        ad.start_at || "",
-      end_at:
-        ad.end_at || "",
-      active:
-        Boolean(ad.active),
+      advertiser_name: ad.advertiser_name || "",
+      description: ad.description || "",
+      image_url: ad.image_url || "",
+      target_url: ad.target_url || "",
+      alt_text: ad.alt_text || "",
+      placement: ad.placement || "between_articles",
+      article_id: ad.article_id || "",
+      category_id: ad.category_id || "",
+      countries: normaliseCountries(ad.countries),
+      devices: normaliseDevices(ad.devices),
+      start_at: ad.start_at || "",
+      end_at: ad.end_at || "",
+      active: Boolean(ad.active),
     })
 
     setMessage("")
@@ -431,54 +295,30 @@ export default function AdvertisingPage() {
 
   function toggleCountry(country) {
     setForm((current) => {
-      const countries =
-        Array.isArray(
-          current.countries
-        )
-          ? current.countries
-          : []
-
-      const exists =
-        countries.includes(country)
+      const countries = Array.isArray(current.countries)
+        ? current.countries
+        : []
+      const exists = countries.includes(country)
 
       return {
         ...current,
         countries: exists
-          ? countries.filter(
-              (item) =>
-                item !== country
-            )
-          : [
-              ...countries,
-              country,
-            ],
+          ? countries.filter((item) => item !== country)
+          : [...countries, country],
       }
     })
   }
 
   function toggleDevice(device) {
     setForm((current) => {
-      const devices =
-        Array.isArray(
-          current.devices
-        )
-          ? current.devices
-          : []
-
-      const exists =
-        devices.includes(device)
+      const devices = Array.isArray(current.devices) ? current.devices : []
+      const exists = devices.includes(device)
 
       return {
         ...current,
         devices: exists
-          ? devices.filter(
-              (item) =>
-                item !== device
-            )
-          : [
-              ...devices,
-              device,
-            ],
+          ? devices.filter((item) => item !== device)
+          : [...devices, device],
       }
     })
   }
@@ -486,22 +326,14 @@ export default function AdvertisingPage() {
   function toggleArticle(articleId) {
     setForm((current) => ({
       ...current,
-      article_id:
-        current.article_id ===
-        articleId
-          ? ""
-          : articleId,
+      article_id: current.article_id === articleId ? "" : articleId,
     }))
   }
 
   function toggleCategory(categoryId) {
     setForm((current) => ({
       ...current,
-      category_id:
-        current.category_id ===
-        categoryId
-          ? ""
-          : categoryId,
+      category_id: current.category_id === categoryId ? "" : categoryId,
     }))
   }
 
@@ -515,9 +347,7 @@ export default function AdvertisingPage() {
 
   async function saveAd() {
     if (!admin) {
-      setError(
-        "Admin account has not loaded."
-      )
+      setError("Admin account has not loaded.")
       return
     }
 
@@ -526,35 +356,14 @@ export default function AdvertisingPage() {
     setError("")
 
     try {
-      const title =
-        form.title.trim()
+      const title = form.title.trim()
 
-      if (!title) {
-        throw new Error(
-          "Ad title is required."
-        )
-      }
+      if (!title) throw new Error("Ad title is required.")
+      if (!form.image_url?.trim()) throw new Error("Ad image URL is required.")
+      if (!form.target_url?.trim())
+        throw new Error("Ad destination URL is required.")
 
-      if (
-        !form.image_url?.trim()
-      ) {
-        throw new Error(
-          "Ad image URL is required."
-        )
-      }
-
-      if (
-        !form.target_url?.trim()
-      ) {
-        throw new Error(
-          "Ad destination URL is required."
-        )
-      }
-
-      if (
-        editingId &&
-        !isValidId(editingId)
-      ) {
+      if (editingId && !isValidId(editingId)) {
         throw new Error(
           "This advertisement has an invalid ID. Refresh the Ads list and try again."
         )
@@ -562,60 +371,28 @@ export default function AdvertisingPage() {
 
       const payload = {
         title,
-        advertiser_name:
-          form.advertiser_name.trim() ||
-          null,
-        description:
-          form.description.trim() ||
-          null,
-        image_url:
-          form.image_url.trim(),
-        target_url:
-          form.target_url.trim(),
-        alt_text:
-          form.alt_text.trim() ||
-          null,
-        placement:
-          form.placement ||
-          "between_articles",
-        article_id:
-          form.article_id || null,
-        category_id:
-          form.category_id || null,
-        countries:
-          Array.isArray(
-            form.countries
-          )
-            ? form.countries
-            : [],
-        devices:
-          Array.isArray(
-            form.devices
-          )
-            ? form.devices
-            : [
-                "mobile",
-                "tablet",
-                "desktop",
-              ],
-        start_at:
-          form.start_at || null,
-        end_at:
-          form.end_at || null,
-        active: isSuperAdmin
-          ? Boolean(form.active)
-          : false,
-        updated_at:
-          new Date().toISOString(),
+        advertiser_name: form.advertiser_name.trim() || null,
+        description: form.description.trim() || null,
+        image_url: form.image_url.trim(),
+        target_url: form.target_url.trim(),
+        alt_text: form.alt_text.trim() || null,
+        placement: form.placement || "between_articles",
+        article_id: form.article_id || null,
+        category_id: form.category_id || null,
+        countries: Array.isArray(form.countries) ? form.countries : [],
+        devices: Array.isArray(form.devices)
+          ? form.devices
+          : ["mobile", "tablet", "desktop"],
+        start_at: form.start_at || null,
+        end_at: form.end_at || null,
+        active: isSuperAdmin ? Boolean(form.active) : false,
+        updated_at: new Date().toISOString(),
       }
 
       let saved = null
 
       if (editingId) {
-        const {
-          data,
-          error: updateError,
-        } = await supabase
+        const { data, error: updateError } = await supabase
           .from("ads")
           .update(payload)
           .eq("id", editingId)
@@ -627,19 +404,14 @@ export default function AdvertisingPage() {
             `Could not update advertisement: ${updateError.message}`
           )
         }
-
         if (!data) {
           throw new Error(
             "The advertisement could not be found for updating. Refresh the Ads list and try again."
           )
         }
-
         saved = data
       } else {
-        const {
-          data,
-          error: insertError,
-        } = await supabase
+        const { data, error: insertError } = await supabase
           .from("ads")
           .insert(payload)
           .select()
@@ -650,7 +422,6 @@ export default function AdvertisingPage() {
             `Could not create advertisement: ${insertError.message}`
           )
         }
-
         saved = data
       }
 
@@ -660,8 +431,7 @@ export default function AdvertisingPage() {
         )
       }
 
-      const wasEditing =
-        Boolean(editingId)
+      const wasEditing = Boolean(editingId)
 
       setMessage(
         wasEditing
@@ -671,27 +441,18 @@ export default function AdvertisingPage() {
 
       setShowEditor(false)
       resetForm()
-
       await loadAds()
     } catch (err) {
-      console.error(
-        "AD SAVE ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not save advertisement."
-      )
+      console.error("AD SAVE ERROR:", err)
+      setError(err?.message || "Could not save advertisement.")
     } finally {
       setSaving(false)
     }
   }
-async function deleteAd(id) {
+
+  async function deleteAd(id) {
     if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can delete advertisements."
-      )
+      setError("Only a SUPER_ADMIN can delete advertisements.")
       return
     }
 
@@ -702,35 +463,23 @@ async function deleteAd(id) {
       return
     }
 
-    const ad = ads.find(
-      (item) => item?.id === id
-    )
-
+    const ad = ads.find((item) => item?.id === id)
     if (!ad) {
-      setError(
-        "Advertisement not found. Refresh the Ads list and try again."
-      )
+      setError("Advertisement not found. Refresh the Ads list and try again.")
       return
     }
 
-    const confirmed =
-      window.confirm(
-        `Delete "${ad.title || "this advertisement"}" permanently?`
-      )
-
-    if (!confirmed) {
-      return
-    }
+    const confirmed = window.confirm(
+      `Delete "${ad.title || "this advertisement"}" permanently?`
+    )
+    if (!confirmed) return
 
     setSaving(true)
     setMessage("")
     setError("")
 
     try {
-      const {
-        data: deletedRows,
-        error: deleteError,
-      } = await supabase
+      const { data: deletedRows, error: deleteError } = await supabase
         .from("ads")
         .delete()
         .eq("id", id)
@@ -741,28 +490,17 @@ async function deleteAd(id) {
           `Could not delete advertisement: ${deleteError.message}`
         )
       }
-
       if (!deletedRows?.length) {
         throw new Error(
           "The advertisement was not deleted. It may no longer exist or you may not have permission to delete it."
         )
       }
 
-      setMessage(
-        "Advertisement deleted successfully."
-      )
-
+      setMessage("Advertisement deleted successfully.")
       await loadAds()
     } catch (err) {
-      console.error(
-        "AD DELETE ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not delete advertisement."
-      )
+      console.error("AD DELETE ERROR:", err)
+      setError(err?.message || "Could not delete advertisement.")
     } finally {
       setSaving(false)
     }
@@ -770,9 +508,7 @@ async function deleteAd(id) {
 
   async function toggleAd(ad) {
     if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can activate or deactivate advertisements."
-      )
+      setError("Only a SUPER_ADMIN can activate or deactivate advertisements.")
       return
     }
 
@@ -788,15 +524,11 @@ async function deleteAd(id) {
     setError("")
 
     try {
-      const {
-        data,
-        error: updateError,
-      } = await supabase
+      const { data, error: updateError } = await supabase
         .from("ads")
         .update({
           active: !Boolean(ad.active),
-          updated_at:
-            new Date().toISOString(),
+          updated_at: new Date().toISOString(),
         })
         .eq("id", ad.id)
         .select("id,active")
@@ -807,7 +539,6 @@ async function deleteAd(id) {
           `Could not change advertisement status: ${updateError.message}`
         )
       }
-
       if (!data) {
         throw new Error(
           "The advertisement could not be found. Refresh the Ads list and try again."
@@ -815,71 +546,37 @@ async function deleteAd(id) {
       }
 
       setMessage(
-        data.active
-          ? "Advertisement activated."
-          : "Advertisement deactivated."
+        data.active ? "Advertisement activated." : "Advertisement deactivated."
       )
-
       await loadAds()
     } catch (err) {
-      console.error(
-        "AD STATUS ERROR:",
-        err
-      )
-
-      setError(
-        err?.message ||
-          "Could not change advertisement status."
-      )
+      console.error("AD STATUS ERROR:", err)
+      setError(err?.message || "Could not change advertisement status.")
     } finally {
       setSaving(false)
     }
   }
 
-  function getPlacementLabel(
-    placement
-  ) {
+  function getPlacementLabel(placement) {
     return (
-      PLACEMENT_OPTIONS.find(
-        (item) =>
-          item.value === placement
-      )?.label ||
+      PLACEMENT_OPTIONS.find((item) => item.value === placement)?.label ||
       placement ||
       "All eligible placements"
     )
   }
 
-  function getArticleTitle(
-    articleId
-  ) {
-    if (!articleId) {
-      return null
-    }
-
-    return (
-      articles.find(
-        (article) =>
-          article.id === articleId
-      )?.title || null
-    )
+  function getArticleTitle(articleId) {
+    if (!articleId) return null
+    return articles.find((article) => article.id === articleId)?.title || null
   }
 
-  function getCategoryName(
-    categoryId
-  ) {
-    if (!categoryId) {
-      return null
-    }
-
+  function getCategoryName(categoryId) {
+    if (!categoryId) return null
     return (
-      categories.find(
-        (category) =>
-          category.id === categoryId
-      )?.name || null
+      categories.find((category) => category.id === categoryId)?.name || null
     )
   }
-
-  if (loading) {
+if (loading) {
     return (
       <main
         style={{
@@ -900,14 +597,10 @@ async function deleteAd(id) {
         <div className="row spread">
           <div>
             <h1 className="h1">
-              {editingId
-                ? "Edit Advertisement"
-                : "New Advertisement"}
+              {editingId ? "Edit Advertisement" : "New Advertisement"}
             </h1>
-
             <p className="muted">
-              Signed in as{" "}
-              {admin?.email || "Admin"}
+              Signed in as {admin?.email || "Admin"}
             </p>
           </div>
 
@@ -922,12 +615,7 @@ async function deleteAd(id) {
         </div>
 
         {message && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-            }}
-          >
+          <div className="card" style={{ marginTop: "18px" }}>
             {message}
           </div>
         )}
@@ -935,120 +623,57 @@ async function deleteAd(id) {
         {error && (
           <div
             className="card"
-            style={{
-              marginTop: "18px",
-              color: "#b00020",
-            }}
+            style={{ marginTop: "18px", color: "#b00020" }}
           >
             {error}
           </div>
         )}
 
-        <div
-          className="grid grid3"
-          style={{
-            marginTop: "18px",
-          }}
-        >
-          <section
-            className="card"
-            style={{
-              gridColumn: "span 2",
-            }}
-          >
-            <h2 className="h2">
-              Advertisement Details
-            </h2>
+        <div className="grid grid3" style={{ marginTop: "18px" }}>
+          <section className="card" style={{ gridColumn: "span 2" }}>
+            <h2 className="h2">Advertisement Details</h2>
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Ad Title
             </label>
-
             <input
               className="input"
               value={form.title}
-              onChange={(event) =>
-                updateField(
-                  "title",
-                  event.target.value
-                )
-              }
+              onChange={(e) => updateField("title", e.target.value)}
               placeholder="Advertisement title"
               disabled={saving}
             />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Advertiser Name
             </label>
-
             <input
               className="input"
-              value={
-                form.advertiser_name
-              }
-              onChange={(event) =>
-                updateField(
-                  "advertiser_name",
-                  event.target.value
-                )
-              }
+              value={form.advertiser_name}
+              onChange={(e) => updateField("advertiser_name", e.target.value)}
               placeholder="Business or advertiser name"
               disabled={saving}
             />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Description
             </label>
-
             <textarea
               className="input"
-              value={
-                form.description
-              }
-              onChange={(event) =>
-                updateField(
-                  "description",
-                  event.target.value
-                )
-              }
+              value={form.description}
+              onChange={(e) => updateField("description", e.target.value)}
               placeholder="Short description of the advertisement"
               rows={4}
               disabled={saving}
             />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Image URL
             </label>
-
             <input
               className="input"
               value={form.image_url}
-              onChange={(event) =>
-                updateField(
-                  "image_url",
-                  event.target.value
-                )
-              }
+              onChange={(e) => updateField("image_url", e.target.value)}
               placeholder="https://example.com/banner.jpg"
               disabled={saving}
             />
@@ -1057,8 +682,7 @@ async function deleteAd(id) {
               <div
                 style={{
                   marginTop: "12px",
-                  border:
-                    "1px solid #e5e5e5",
+                  border: "1px solid #e5e5e5",
                   borderRadius: "12px",
                   overflow: "hidden",
                   background: "#f7f7f7",
@@ -1066,138 +690,70 @@ async function deleteAd(id) {
               >
                 <img
                   src={form.image_url}
-                  alt={
-                    form.alt_text ||
-                    form.title ||
-                    "Advertisement preview"
-                  }
+                  alt={form.alt_text || form.title || "Advertisement preview"}
                   style={{
                     width: "100%",
                     maxHeight: "280px",
                     objectFit: "cover",
                     display: "block",
                   }}
-                  onError={(event) => {
-                    event.currentTarget.style.display =
-                      "none"
+                  onError={(e) => {
+                    e.currentTarget.style.display = "none"
                   }}
                 />
               </div>
             )}
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Destination URL
             </label>
-
             <input
               className="input"
               value={form.target_url}
-              onChange={(event) =>
-                updateField(
-                  "target_url",
-                  event.target.value
-                )
-              }
+              onChange={(e) => updateField("target_url", e.target.value)}
               placeholder="https://example.com"
               disabled={saving}
             />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Alt Text
             </label>
-
             <input
               className="input"
               value={form.alt_text}
-              onChange={(event) =>
-                updateField(
-                  "alt_text",
-                  event.target.value
-                )
-              }
+              onChange={(e) => updateField("alt_text", e.target.value)}
               placeholder="Describe the advertisement image"
               disabled={saving}
             />
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "30px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Placement
             </h2>
-
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Where should this advertisement
-              appear?
+            <label style={{ display: "block", marginTop: "16px" }}>
+              Where should this advertisement appear?
             </label>
-
             <select
               className="input"
               value={form.placement}
-              onChange={(event) =>
-                updateField(
-                  "placement",
-                  event.target.value
-                )
-              }
+              onChange={(e) => updateField("placement", e.target.value)}
               disabled={saving}
             >
-              {PLACEMENT_OPTIONS.map(
-                (option) => (
-                  <option
-                    key={option.value}
-                    value={option.value}
-                  >
-                    {option.label}
-                  </option>
-                )
-              )}
+              {PLACEMENT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "30px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Target Article
             </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              Optionally select one article
-              where this advertisement can
-              appear.
+            <p className="muted" style={{ marginTop: "6px" }}>
+              Optionally select one article where this advertisement can appear.
             </p>
 
             {articles.length === 0 ? (
-              <p
-                className="muted"
-                style={{
-                  marginTop: "12px",
-                }}
-              >
+              <p className="muted" style={{ marginTop: "12px" }}>
                 No articles available.
               </p>
             ) : (
@@ -1210,90 +766,50 @@ async function deleteAd(id) {
                   overflowY: "auto",
                 }}
               >
-                {articles.map(
-                  (article) => {
-                    const selected =
-                      form.article_id ===
-                      article.id
-
-                    return (
-                      <button
-                        key={article.id}
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          toggleArticle(
-                            article.id
-                          )
-                        }
-                        style={{
-                          textAlign: "left",
-                          border: selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
-                          borderRadius:
-                            "10px",
-                          padding: "12px",
-                          background:
-                            selected
-                              ? "#f5f5f5"
-                              : "#fff",
-                          cursor: saving
-                            ? "not-allowed"
-                            : "pointer",
-                        }}
-                      >
-                        <strong>
-                          {article.title ||
-                            "Untitled article"}
-                        </strong>
-
-                        {article.slug && (
-                          <div
-                            className="muted"
-                            style={{
-                              marginTop: "4px",
-                              fontSize:
-                                "13px",
-                            }}
-                          >
-                            /{article.slug}
-                          </div>
-                        )}
-                      </button>
-                    )
-                  }
-                )}
+                {articles.map((article) => {
+                  const selected = form.article_id === article.id
+                  return (
+                    <button
+                      key={article.id}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => toggleArticle(article.id)}
+                      style={{
+                        textAlign: "left",
+                        border: selected
+                          ? "2px solid #111"
+                          : "1px solid #ddd",
+                        borderRadius: "10px",
+                        padding: "12px",
+                        background: selected ? "#f5f5f5" : "#fff",
+                        cursor: saving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      <strong>{article.title || "Untitled article"}</strong>
+                      {article.slug && (
+                        <div
+                          className="muted"
+                          style={{ marginTop: "4px", fontSize: "13px" }}
+                        >
+                          /{article.slug}
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "30px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Target Category
             </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              Optionally select one category
-              where this advertisement can
+            <p className="muted" style={{ marginTop: "6px" }}>
+              Optionally select one category where this advertisement can
               appear.
             </p>
 
             {categories.length === 0 ? (
-              <p
-                className="muted"
-                style={{
-                  marginTop: "12px",
-                }}
-              >
+              <p className="muted" style={{ marginTop: "12px" }}>
                 No categories available.
               </p>
             ) : (
@@ -1305,290 +821,51 @@ async function deleteAd(id) {
                   marginTop: "12px",
                 }}
               >
-                {categories.map(
-                  (category) => {
-                    const selected =
-                      form.category_id ===
-                      category.id
-
-                    return (
-                      <button
-                        key={category.id}
-                        type="button"
-                        disabled={saving}
-                        onClick={() =>
-                          toggleCategory(
-                            category.id
-                          )
-                        }
-                        style={{
-                          border: selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
-                          borderRadius:
-                            "999px",
-                          padding:
-                            "8px 12px",
-                          background:
-                            selected
-                              ? "#111"
-                              : "#fff",
-                          color: selected
-                            ? "#fff"
-                            : "#111",
-                          cursor: saving
-                            ? "not-allowed"
-                            : "pointer",
-                        }}
-                      >
-                        {category.name ||
-                          "Unnamed category"}
-                      </button>
-                    )
-                  }
-                )}
+                {categories.map((category) => {
+                  const selected = form.category_id === category.id
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      disabled={saving}
+                      onClick={() => toggleCategory(category.id)}
+                      style={{
+                        border: selected
+                          ? "2px solid #111"
+                          : "1px solid #ddd",
+                        borderRadius: "999px",
+                        padding: "8px 12px",
+                        background: selected ? "#111" : "#fff",
+                        color: selected ? "#fff" : "#111",
+                        cursor: saving ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {category.name || "Unnamed category"}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
-            {(form.article_id ||
-              form.category_id) && (
+            {(form.article_id || form.category_id) && (
               <button
                 type="button"
                 className="btn"
-                style={{
-                  marginTop: "14px",
-                }}
-                onClick={
-                  clearTargeting
-                }
+                style={{ marginTop: "14px" }}
+                onClick={clearTargeting}
                 disabled={saving}
               >
-                Clear Article/Category
-                Targeting
+                Clear Article/Category Targeting
               </button>
             )}
-          </section>
-            <input
-              className="input"
-              value={
-                form.target_url
-              }
-              onChange={(event) =>
-                updateField(
-                  "target_url",
-                  event.target.value
-                )
-              }
-              placeholder="https://advertiser.com"
-            />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Alt Text
-            </label>
-
-            <input
-              className="input"
-              value={
-                form.alt_text
-              }
-              onChange={(event) =>
-                updateField(
-                  "alt_text",
-                  event.target.value
-                )
-              }
-              placeholder="Describe the advertisement image"
-            />
-
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
-              Placement
-            </h2>
-
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Where should this ad
-              appear?
-            </label>
-
-            <select
-              className="input"
-              value={
-                form.placement
-              }
-              onChange={(event) =>
-                updateField(
-                  "placement",
-                  event.target.value
-                )
-              }
-            >
-              {PLACEMENT_OPTIONS.map(
-                (option) => (
-                  <option
-                    key={
-                      option.value
-                    }
-                    value={
-                      option.value
-                    }
-                  >
-                    {option.label}
-                  </option>
-                )
-              )}
-            </select>
-
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
-              Target Article
-            </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              Select an article if
-              this advertisement
-              should appear
-              specifically on that
-              article.
-            </p>
-
-            <select
-              className="input"
-              value={
-                form.article_id
-              }
-              onChange={(event) =>
-                updateField(
-                  "article_id",
-                  event.target.value
-                )
-              }
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              <option value="">
-                All articles
-              </option>
-
-              {articles.map(
-                (article) => (
-                  <option
-                    key={
-                      article.id
-                    }
-                    value={
-                      article.id
-                    }
-                  >
-                    {article.title ||
-                      "Untitled article"}
-                  </option>
-                )
-              )}
-            </select>
-
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
-              Target Category
-            </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              Select a category if
-              this advertisement
-              should appear inside
-              that category.
-            </p>
-
-            <select
-              className="input"
-              value={
-                form.category_id
-              }
-              onChange={(event) =>
-                updateField(
-                  "category_id",
-                  event.target.value
-                )
-              }
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              <option value="">
-                All categories
-              </option>
-
-              {categories.map(
-                (category) => (
-                  <option
-                    key={
-                      category.id
-                    }
-                    value={
-                      category.id
-                    }
-                  >
-                    {category.name ||
-                      "Unnamed category"}
-                  </option>
-                )
-              )}
-            </select>
-
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Country Targeting
             </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              If you select countries,
-              this advertisement will
-              only appear to visitors
-              from those countries.
-              Leave all countries
-              unselected to allow the
-              advertisement everywhere.
+            <p className="muted" style={{ marginTop: "6px" }}>
+              If you select countries, this advertisement will only appear to
+              visitors from those countries. Leave all unselected to allow it
+              everywhere.
             </p>
 
             <div
@@ -1599,93 +876,48 @@ async function deleteAd(id) {
                 marginTop: "12px",
               }}
             >
-              {COUNTRY_OPTIONS.map(
-                (country) => {
-                  const selected =
-                    form.countries.includes(
-                      country.value
-                    )
-
-                  return (
-                    <button
-                      key={
-                        country.value
-                      }
-                      type="button"
-                      onClick={() =>
-                        toggleCountry(
-                          country.value
-                        )
-                      }
-                      style={{
-                        border:
-                          selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
-                        borderRadius:
-                          "999px",
-                        padding: "8px 12px",
-                        background:
-                          selected
-                            ? "#111"
-                            : "white",
-                        color:
-                          selected
-                            ? "white"
-                            : "#111",
-                        cursor:
-                          "pointer",
-                        fontSize:
-                          "13px",
-                        fontWeight: 600,
-                      }}
-                    >
-                      {country.label}
-                    </button>
-                  )
-                }
-              )}
+              {COUNTRY_OPTIONS.map((country) => {
+                const selected = form.countries.includes(country.value)
+                return (
+                  <button
+                    key={country.value}
+                    type="button"
+                    disabled={saving}
+                    onClick={() => toggleCountry(country.value)}
+                    style={{
+                      border: selected
+                        ? "2px solid #111"
+                        : "1px solid #ddd",
+                      borderRadius: "999px",
+                      padding: "8px 12px",
+                      background: selected ? "#111" : "white",
+                      color: selected ? "white" : "#111",
+                      cursor: saving ? "not-allowed" : "pointer",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {country.label}
+                  </button>
+                )
+              })}
             </div>
 
-            {form.countries.length >
-              0 && (
+            {form.countries.length > 0 && (
               <div
                 className="muted"
-                style={{
-                  marginTop: "10px",
-                  fontSize: "13px",
-                }}
+                style={{ marginTop: "10px", fontSize: "13px" }}
               >
                 Selected countries:{" "}
-                {form.countries
-                  .map(
-                    (code) =>
-                      getCountryLabel(
-                        code
-                      )
-                  )
-                  .join(", ")}
+                {form.countries.map((code) => getCountryLabel(code)).join(", ")}
               </div>
             )}
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Device Targeting
             </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "6px",
-              }}
-            >
-              Select the devices where
-              this advertisement is
-              allowed to appear.
+            <p className="muted" style={{ marginTop: "6px" }}>
+              Select the devices where this advertisement is allowed to appear.
             </p>
 
             <div
@@ -1695,173 +927,98 @@ async function deleteAd(id) {
                 marginTop: "12px",
               }}
             >
-              {DEVICE_OPTIONS.map(
-                (device) => {
-                  const selected =
-                    form.devices.includes(
-                      device.value
-                    )
-
-                  return (
-                    <label
-                      key={
-                        device.value
-                      }
-                      style={{
-                        display: "flex",
-                        alignItems:
-                          "center",
-                        gap: "10px",
-                        cursor:
-                          "pointer",
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={
-                          selected
-                        }
-                        onChange={() =>
-                          toggleDevice(
-                            device.value
-                          )
-                        }
-                      />
-
-                      <span>
-                        {device.label}
-                      </span>
-                    </label>
-                  )
-                }
-              )}
+              {DEVICE_OPTIONS.map((device) => {
+                const selected = form.devices.includes(device.value)
+                return (
+                  <label
+                    key={device.value}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "10px",
+                      cursor: saving ? "not-allowed" : "pointer",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      disabled={saving}
+                      onChange={() => toggleDevice(device.value)}
+                    />
+                    <span>{device.label}</span>
+                  </label>
+                )
+              })}
             </div>
 
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
+            <h2 className="h2" style={{ marginTop: "30px" }}>
               Campaign Schedule
             </h2>
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               Start Date & Time
             </label>
-
             <input
               className="input"
               type="datetime-local"
-              value={
-                form.start_at
-              }
-              onChange={(event) =>
-                updateField(
-                  "start_at",
-                  event.target.value
-                )
-              }
+              value={form.start_at}
+              onChange={(e) => updateField("start_at", e.target.value)}
+              disabled={saving}
             />
 
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
+            <label style={{ display: "block", marginTop: "16px" }}>
               End Date & Time
             </label>
-
             <input
               className="input"
               type="datetime-local"
-              value={
-                form.end_at
-              }
-              onChange={(event) =>
-                updateField(
-                  "end_at",
-                  event.target.value
-                )
-              }
+              value={form.end_at}
+              onChange={(e) => updateField("end_at", e.target.value)}
+              disabled={saving}
             />
 
             <p
               className="muted"
-              style={{
-                marginTop: "7px",
-                fontSize: "13px",
-              }}
+              style={{ marginTop: "7px", fontSize: "13px" }}
             >
-              Leave the dates empty if
-              the advertisement should
-              run without a scheduled
-              start or end date.
+              Leave the dates empty if the advertisement should run without a
+              scheduled start or end date.
             </p>
 
             <div
               style={{
                 marginTop: "22px",
                 padding: "14px",
-                border:
-                  "1px solid #e5e5e5",
+                border: "1px solid #e5e5e5",
                 borderRadius: "12px",
-                background:
-                  "#fafafa",
+                background: "#fafafa",
               }}
             >
               <label
                 style={{
                   display: "flex",
-                  alignItems:
-                    "center",
+                  alignItems: "center",
                   gap: "10px",
-                  cursor:
-                    isSuperAdmin
-                      ? "pointer"
-                      : "not-allowed",
+                  cursor: isSuperAdmin ? "pointer" : "not-allowed",
                 }}
               >
                 <input
                   type="checkbox"
-                  checked={
-                    Boolean(
-                      form.active
-                    )
-                  }
-                  disabled={
-                    !isSuperAdmin
-                  }
-                  onChange={(event) =>
-                    updateField(
-                      "active",
-                      event.target.checked
-                    )
+                  checked={Boolean(form.active)}
+                  disabled={!isSuperAdmin || saving}
+                  onChange={(e) =>
+                    updateField("active", e.target.checked)
                   }
                 />
-
-                <strong>
-                  Active advertisement
-                </strong>
+                <strong>Active advertisement</strong>
               </label>
 
               {!isSuperAdmin && (
                 <p
                   className="muted"
-                  style={{
-                    marginTop: "7px",
-                    fontSize: "13px",
-                  }}
+                  style={{ marginTop: "7px", fontSize: "13px" }}
                 >
-                  Only a SUPER_ADMIN can
-                  activate an
-                  advertisement.
+                  Only a SUPER_ADMIN can activate an advertisement.
                 </p>
               )}
             </div>
@@ -1891,9 +1048,7 @@ async function deleteAd(id) {
                 type="button"
                 className="btn"
                 disabled={saving}
-                onClick={
-                  closeEditor
-                }
+                onClick={closeEditor}
               >
                 Cancel
               </button>
@@ -1901,170 +1056,87 @@ async function deleteAd(id) {
           </section>
 
           <aside className="card">
-            <h2 className="h2">
-              Campaign Summary
-            </h2>
+            <h2 className="h2">Campaign Summary</h2>
 
-            <div
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              <p className="muted">
-                Placement
-              </p>
-
-              <strong>
-                {getPlacementLabel(
-                  form.placement
-                )}
-              </strong>
+            <div style={{ marginTop: "16px" }}>
+              <p className="muted">Placement</p>
+              <strong>{getPlacementLabel(form.placement)}</strong>
             </div>
 
-            <div
-              style={{
-                marginTop: "18px",
-              }}
-            >
-              <p className="muted">
-                Article
-              </p>
-
+            <div style={{ marginTop: "18px" }}>
+              <p className="muted">Article</p>
               <strong>
                 {form.article_id
-                  ? articles.find(
-                      (article) =>
-                        article.id ===
-                        form.article_id
-                    )?.title ||
-                    "Selected article"
+                  ? getArticleTitle(form.article_id) || "Selected article"
                   : "All articles"}
               </strong>
             </div>
 
-            <div
-              style={{
-                marginTop: "18px",
-              }}
-            >
-              <p className="muted">
-                Category
-              </p>
-
+            <div style={{ marginTop: "18px" }}>
+              <p className="muted">Category</p>
               <strong>
                 {form.category_id
-                  ? categories.find(
-                      (category) =>
-                        category.id ===
-                        form.category_id
-                    )?.name ||
-                    "Selected category"
+                  ? getCategoryName(form.category_id) || "Selected category"
                   : "All categories"}
               </strong>
             </div>
-            <div
-              style={{
-                marginTop: "18px",
-              }}
-            >
-              <p className="muted">
-                Countries
-              </p>
 
+            <div style={{ marginTop: "18px" }}>
+              <p className="muted">Countries</p>
               <strong>
                 {form.countries.length
                   ? form.countries
-                      .map(
-                        (code) =>
-                          getCountryLabel(
-                            code
-                          )
-                      )
+                      .map((code) => getCountryLabel(code))
                       .join(", ")
                   : "All countries"}
               </strong>
             </div>
 
-            <div
-              style={{
-                marginTop: "18px",
-              }}
-            >
-              <p className="muted">
-                Devices
-              </p>
-
+            <div style={{ marginTop: "18px" }}>
+              <p className="muted">Devices</p>
               <strong>
                 {form.devices.length
                   ? form.devices
                       .map(
                         (device) =>
-                          DEVICE_OPTIONS.find(
-                            (item) =>
-                              item.value ===
-                              device
-                          )?.label ||
-                          device
+                          DEVICE_OPTIONS.find((item) => item.value === device)
+                            ?.label || device
                       )
                       .join(", ")
                   : "No devices selected"}
               </strong>
             </div>
 
-            <div
-              style={{
-                marginTop: "18px",
-              }}
-            >
-              <p className="muted">
-                Status
-              </p>
-
-              <strong>
-                {form.active
-                  ? "ACTIVE"
-                  : "INACTIVE"}
-              </strong>
+            <div style={{ marginTop: "18px" }}>
+              <p className="muted">Status</p>
+              <strong>{form.active ? "ACTIVE" : "INACTIVE"}</strong>
             </div>
           </aside>
         </div>
       </main>
     )
   }
-
-  return (
+return (
     <main>
       <div className="row spread">
         <div>
-          <h1 className="h1">
-            Advertising
-          </h1>
-
+          <h1 className="h1">Advertising</h1>
           <p className="muted">
-            Create and manage
-            advertisements that
-            appear across THE INDEX.
+            Create and manage advertisements that appear across THE INDEX.
           </p>
         </div>
 
         <button
           type="button"
           className="btn primary"
-          onClick={
-            openNewCampaign
-          }
+          onClick={openNewAdvertisement}
         >
           New Advertisement
         </button>
       </div>
 
       {message && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-          }}
-        >
+        <div className="card" style={{ marginTop: "18px" }}>
           {message}
         </div>
       )}
@@ -2072,141 +1144,64 @@ async function deleteAd(id) {
       {error && (
         <div
           className="card"
-          style={{
-            marginTop: "18px",
-            color: "#b00020",
-          }}
+          style={{ marginTop: "18px", color: "#b00020" }}
         >
           {error}
         </div>
       )}
 
-      <div
-        className="grid grid3"
-        style={{
-          marginTop: "18px",
-        }}
-      >
+      <div className="grid grid3" style={{ marginTop: "18px" }}>
         <div className="card">
-          <p className="muted">
-            Active Ads
-          </p>
-
-          <h2
-            className="h1"
-            style={{
-              marginTop: "6px",
-            }}
-          >
+          <p className="muted">Active Ads</p>
+          <h2 className="h1" style={{ marginTop: "6px" }}>
             {activeAds}
           </h2>
         </div>
 
         <div className="card">
-          <p className="muted">
-            Total Views
-          </p>
-
-          <h2
-            className="h1"
-            style={{
-              marginTop: "6px",
-            }}
-          >
+          <p className="muted">Total Views</p>
+          <h2 className="h1" style={{ marginTop: "6px" }}>
             {totalViews.toLocaleString()}
           </h2>
         </div>
 
         <div className="card">
-          <p className="muted">
-            Total Clicks
-          </p>
-
-          <h2
-            className="h1"
-            style={{
-              marginTop: "6px",
-            }}
-          >
+          <p className="muted">Total Clicks</p>
+          <h2 className="h1" style={{ marginTop: "6px" }}>
             {totalClicks.toLocaleString()}
           </h2>
-
-          <p
-            className="muted"
-            style={{
-              marginTop: "5px",
-            }}
-          >
-            CTR: {ctr}%
+          <p className="muted" style={{ marginTop: "5px" }}>
+            CTR: {totalCtr}%
           </p>
         </div>
       </div>
 
-      <section
-        className="card"
-        style={{
-          marginTop: "18px",
-        }}
-      >
+      <section className="card" style={{ marginTop: "18px" }}>
         <div className="row spread">
           <div>
-            <h2 className="h2">
-              Advertisements
-            </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "5px",
-              }}
-            >
-              Manage your banners,
-              targeting, schedules and
-              performance.
+            <h2 className="h2">Advertisements</h2>
+            <p className="muted" style={{ marginTop: "5px" }}>
+              Manage your banners, targeting, schedules and performance.
             </p>
           </div>
 
-          <button
-            type="button"
-            className="btn"
-            onClick={loadData}
-          >
+          <button type="button" className="btn" onClick={loadData}>
             Refresh
           </button>
         </div>
 
         {ads.length === 0 ? (
-          <div
-            style={{
-              padding: "36px 10px",
-              textAlign: "center",
-            }}
-          >
-            <h3 className="h2">
-              No advertisements yet
-            </h3>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "7px",
-              }}
-            >
-              Create your first
-              advertisement to display
-              banners on the public
+          <div style={{ padding: "36px 10px", textAlign: "center" }}>
+            <h3 className="h2">No advertisements yet</h3>
+            <p className="muted" style={{ marginTop: "7px" }}>
+              Create your first advertisement to display banners on the public
               application.
             </p>
-
             <button
               type="button"
               className="btn primary"
-              style={{
-                marginTop: "18px",
-              }}
-              onClick={
-                openNewCampaign
-              }
+              style={{ marginTop: "18px" }}
+              onClick={openNewAdvertisement}
             >
               Create Advertisement
             </button>
@@ -2220,128 +1215,76 @@ async function deleteAd(id) {
             }}
           >
             {ads.map((ad) => {
-              const validId =
-                isValidId(ad?.id)
-
-              const views =
-                Number(
-                  ad?.views || 0
-                )
-
-              const clicks =
-                Number(
-                  ad?.clicks || 0
-                )
-
+              const validId = isValidId(ad?.id)
+              const views = Number(ad?.views || 0)
+              const clicks = Number(ad?.clicks || 0)
               const adCtr =
-                views > 0
-                  ? (
-                      (clicks /
-                        views) *
-                      100
-                    ).toFixed(2)
-                  : "0.00"
+                views > 0 ? ((clicks / views) * 100).toFixed(2) : "0.00"
 
               return (
                 <article
                   key={
                     validId
                       ? ad.id
-                      : `${ad?.title || "ad"}-${ad?.created_at || Math.random()}`
+                      : `\( {ad?.title || "ad"}- \){ad?.created_at || Math.random()}`
                   }
                   style={{
-                    border:
-                      "1px solid #e5e5e5",
-                    borderRadius:
-                      "14px",
+                    border: "1px solid #e5e5e5",
+                    borderRadius: "14px",
                     padding: "16px",
                   }}
                 >
                   <div
                     className="row spread"
-                    style={{
-                      alignItems:
-                        "flex-start",
-                    }}
+                    style={{ alignItems: "flex-start" }}
                   >
-                    <div
-                      style={{
-                        minWidth: 0,
-                        flex: 1,
-                      }}
-                    >
+                    <div style={{ minWidth: 0, flex: 1 }}>
                       <h3 className="h2">
-                        {ad.title ||
-                          "Untitled advertisement"}
+                        {ad.title || "Untitled advertisement"}
                       </h3>
 
-                      <p
-                        className="muted"
-                        style={{
-                          marginTop: "6px",
-                        }}
-                      >
-                        {ad.target_url ||
-                          "No destination URL"}
+                      <p className="muted" style={{ marginTop: "6px" }}>
+                        {ad.target_url || "No destination URL"}
                       </p>
 
                       <div
                         style={{
                           display: "flex",
-                          flexWrap:
-                            "wrap",
+                          flexWrap: "wrap",
                           gap: "7px",
-                          marginTop:
-                            "10px",
+                          marginTop: "10px",
                         }}
                       >
                         <span
                           style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "5px 9px",
-                            fontSize:
-                              "12px",
-                            fontWeight:
-                              600,
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "5px 9px",
+                            fontSize: "12px",
+                            fontWeight: 600,
                           }}
                         >
-                          {ad.active
-                            ? "ACTIVE"
-                            : "INACTIVE"}
+                          {ad.active ? "ACTIVE" : "INACTIVE"}
                         </span>
 
                         <span
                           style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "5px 9px",
-                            fontSize:
-                              "12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "5px 9px",
+                            fontSize: "12px",
                           }}
                         >
-                          {getPlacementLabel(
-                            ad.placement
-                          )}
+                          {getPlacementLabel(ad.placement)}
                         </span>
 
                         {ad.article_id && (
                           <span
                             style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "5px 9px",
-                              fontSize:
-                                "12px",
+                              border: "1px solid #ddd",
+                              borderRadius: "999px",
+                              padding: "5px 9px",
+                              fontSize: "12px",
                             }}
                           >
                             ARTICLE TARGETED
@@ -2351,71 +1294,41 @@ async function deleteAd(id) {
                         {ad.category_id && (
                           <span
                             style={{
-                              border:
-                                "1px solid #ddd",
-                              borderRadius:
-                                "999px",
-                              padding:
-                                "5px 9px",
-                              fontSize:
-                                "12px",
+                              border: "1px solid #ddd",
+                              borderRadius: "999px",
+                              padding: "5px 9px",
+                              fontSize: "12px",
                             }}
                           >
                             CATEGORY TARGETED
                           </span>
                         )}
 
-                        {Array.isArray(
-                          ad.countries
-                        ) &&
-                          ad.countries
-                            .length >
-                            0 && (
+                        {Array.isArray(ad.countries) &&
+                          ad.countries.length > 0 && (
                             <span
                               style={{
-                                border:
-                                  "1px solid #ddd",
-                                borderRadius:
-                                  "999px",
-                                padding:
-                                  "5px 9px",
-                                fontSize:
-                                  "12px",
+                                border: "1px solid #ddd",
+                                borderRadius: "999px",
+                                padding: "5px 9px",
+                                fontSize: "12px",
                               }}
                             >
-                              {
-                                ad
-                                  .countries
-                                  .length
-                              }{" "}
-                              countries
+                              {ad.countries.length} countries
                             </span>
                           )}
 
-                        {Array.isArray(
-                          ad.devices
-                        ) &&
-                          ad.devices
-                            .length >
-                            0 && (
+                        {Array.isArray(ad.devices) &&
+                          ad.devices.length > 0 && (
                             <span
                               style={{
-                                border:
-                                  "1px solid #ddd",
-                                borderRadius:
-                                  "999px",
-                                padding:
-                                  "5px 9px",
-                                fontSize:
-                                  "12px",
+                                border: "1px solid #ddd",
+                                borderRadius: "999px",
+                                padding: "5px 9px",
+                                fontSize: "12px",
                               }}
                             >
-                              {
-                                ad
-                                  .devices
-                                  .length
-                              }{" "}
-                              devices
+                              {ad.devices.length} devices
                             </span>
                           )}
                       </div>
@@ -2423,82 +1336,48 @@ async function deleteAd(id) {
                       <div
                         style={{
                           display: "flex",
-                          flexWrap:
-                            "wrap",
+                          flexWrap: "wrap",
                           gap: "20px",
-                          marginTop:
-                            "14px",
+                          marginTop: "14px",
                         }}
                       >
                         <div>
-                          <span className="muted">
-                            Views
-                          </span>
-
+                          <span className="muted">Views</span>
                           <strong
-                            style={{
-                              display:
-                                "block",
-                              marginTop:
-                                "3px",
-                            }}
+                            style={{ display: "block", marginTop: "3px" }}
                           >
                             {views.toLocaleString()}
                           </strong>
                         </div>
 
                         <div>
-                          <span className="muted">
-                            Clicks
-                          </span>
-
+                          <span className="muted">Clicks</span>
                           <strong
-                            style={{
-                              display:
-                                "block",
-                              marginTop:
-                                "3px",
-                            }}
+                            style={{ display: "block", marginTop: "3px" }}
                           >
                             {clicks.toLocaleString()}
                           </strong>
                         </div>
 
                         <div>
-                          <span className="muted">
-                            CTR
-                          </span>
-
+                          <span className="muted">CTR</span>
                           <strong
-                            style={{
-                              display:
-                                "block",
-                              marginTop:
-                                "3px",
-                            }}
+                            style={{ display: "block", marginTop: "3px" }}
                           >
                             {adCtr}%
                           </strong>
                         </div>
 
                         <div>
-                          <span className="muted">
-                            Created
-                          </span>
-
+                          <span className="muted">Created</span>
                           <strong
                             style={{
-                              display:
-                                "block",
-                              marginTop:
-                                "3px",
-                              fontSize:
-                                "13px",
+                              display: "block",
+                              marginTop: "3px",
+                              fontSize: "13px",
                             }}
                           >
-                            {formatDate(
-                              ad.created_at
-                            )}
+                            {formatDate(ad.created_at)}
                           </strong>
                         </div>
                       </div>
@@ -2507,24 +1386,17 @@ async function deleteAd(id) {
                     <div
                       style={{
                         display: "flex",
-                        flexWrap:
-                          "wrap",
+                        flexWrap: "wrap",
                         gap: "8px",
-                        justifyContent:
-                          "flex-end",
-                        marginLeft:
-                          "16px",
+                        justifyContent: "flex-end",
+                        marginLeft: "16px",
                       }}
                     >
                       <button
                         type="button"
                         className="btn"
-                        disabled={
-                          !validId
-                        }
-                        onClick={() =>
-                          editAd(ad)
-                        }
+                        disabled={!validId}
+                        onClick={() => editAd(ad)}
                       >
                         Edit
                       </button>
@@ -2532,31 +1404,17 @@ async function deleteAd(id) {
                       <button
                         type="button"
                         className="btn"
-                        disabled={
-                          !validId ||
-                          !isSuperAdmin
-                        }
-                        onClick={() =>
-                          toggleAd(ad)
-                        }
+                        disabled={!validId || !isSuperAdmin}
+                        onClick={() => toggleAd(ad)}
                       >
-                        {ad.active
-                          ? "Deactivate"
-                          : "Activate"}
+                        {ad.active ? "Deactivate" : "Activate"}
                       </button>
 
                       <button
                         type="button"
                         className="btn"
-                        disabled={
-                          !validId ||
-                          !isSuperAdmin
-                        }
-                        onClick={() =>
-                          deleteAd(
-                            ad.id
-                          )
-                        }
+                        disabled={!validId || !isSuperAdmin}
+                        onClick={() => deleteAd(ad.id)}
                       >
                         Delete
                       </button>
@@ -2566,40 +1424,23 @@ async function deleteAd(id) {
                   {ad.image_url && (
                     <div
                       style={{
-                        marginTop:
-                          "15px",
-                        borderRadius:
-                          "12px",
-                        overflow:
-                          "hidden",
-                        border:
-                          "1px solid #e5e5e5",
+                        marginTop: "15px",
+                        borderRadius: "12px",
+                        overflow: "hidden",
+                        border: "1px solid #e5e5e5",
                       }}
                     >
                       <img
-                        src={
-                          ad.image_url
-                        }
-                        alt={
-                          ad.alt_text ||
-                          ad.title ||
-                          "Advertisement"
-                        }
+                        src={ad.image_url}
+                        alt={ad.alt_text || ad.title || "Advertisement"}
                         style={{
-                          display:
-                            "block",
-                          width:
-                            "100%",
-                          maxHeight:
-                            "240px",
-                          objectFit:
-                            "cover",
+                          display: "block",
+                          width: "100%",
+                          maxHeight: "240px",
+                          objectFit: "cover",
                         }}
-                        onError={(
-                          event
-                        ) => {
-                          event.currentTarget.style.display =
-                            "none"
+                        onError={(e) => {
+                          e.currentTarget.style.display = "none"
                         }}
                       />
                     </div>
@@ -2607,12 +1448,7 @@ async function deleteAd(id) {
 
                   <div
                     className="muted"
-                    style={{
-                      marginTop:
-                        "12px",
-                      fontSize:
-                        "13px",
-                    }}
+                    style={{ marginTop: "12px", fontSize: "13px" }}
                   >
                     {ad.start_at
                       ? `Starts: ${formatDate(ad.start_at)}`
