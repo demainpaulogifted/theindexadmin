@@ -272,7 +272,7 @@ async function loadAdmin() {
     setEditingId(ad.id)
 
     setForm({
-      title: ad.title || "",
+      title: ad.name || ad.title || "",
       advertiser_name: ad.advertiser_name || "",
       description: ad.description || "",
       image_url: ad.image_url || "",
@@ -369,9 +369,9 @@ async function loadAdmin() {
         )
       }
 
+      // IMPORTANT: map form.title → database column "name"
       const payload = {
-        title,
-        advertiser_name: form.advertiser_name.trim() || null,
+        name: title,
         description: form.description.trim() || null,
         image_url: form.image_url.trim(),
         target_url: form.target_url.trim(),
@@ -388,6 +388,11 @@ async function loadAdmin() {
         active: isSuperAdmin ? Boolean(form.active) : false,
         updated_at: new Date().toISOString(),
       }
+
+      // Only include advertiser_name if you have already added the column
+      // Uncomment the next line after running:
+      // ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_name text;
+      // payload.advertiser_name = form.advertiser_name.trim() || null
 
       let saved = null
 
@@ -470,7 +475,7 @@ async function loadAdmin() {
     }
 
     const confirmed = window.confirm(
-      `Delete "${ad.title || "this advertisement"}" permanently?`
+      `Delete "${ad.name || ad.title || "this advertisement"}" permanently?`
     )
     if (!confirmed) return
 
@@ -1226,7 +1231,7 @@ return (
                   key={
                     validId
                       ? ad.id
-                      : `\( {ad?.title || "ad"}- \){ad?.created_at || Math.random()}`
+                      : `\( {ad?.name || ad?.title || "ad"}- \){ad?.created_at || Math.random()}`
                   }
                   style={{
                     border: "1px solid #e5e5e5",
@@ -1240,7 +1245,7 @@ return (
                   >
                     <div style={{ minWidth: 0, flex: 1 }}>
                       <h3 className="h2">
-                        {ad.title || "Untitled advertisement"}
+                        {ad.name || ad.title || "Untitled advertisement"}
                       </h3>
 
                       <p className="muted" style={{ marginTop: "6px" }}>
@@ -1432,7 +1437,7 @@ return (
                     >
                       <img
                         src={ad.image_url}
-                        alt={ad.alt_text || ad.title || "Advertisement"}
+                        alt={ad.alt_text || ad.name || ad.title || "Advertisement"}
                         style={{
                           display: "block",
                           width: "100%",
