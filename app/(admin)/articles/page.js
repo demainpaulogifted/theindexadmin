@@ -1,29 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabase"
-
-const EMPTY_FORM = {
-  title: "",
-  slug: "",
-  excerpt: "",
-  content_html: "",
-  featured_image: "",
-  seo_title: "",
-  meta_description: "",
-  canonical_url: "",
-  no_index: false,
-  category_ids: [],
-}
-
-function makeSlug(value) {
-  return value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/\s+/g, "-")
-    .replace(/-+/g, "-")
-}
+import ArticleEditor from "@/components/ArticleEditor"
 
 export default function ArticlesPage() {
   const [articles, setArticles] = useState([])
@@ -32,30 +11,14 @@ export default function ArticlesPage() {
   const [viewCounts, setViewCounts] = useState({})
   const [admin, setAdmin] = useState(null)
 
-  const [form, setForm] = useState(EMPTY_FORM)
-  const [editingId, setEditingId] = useState(null)
+  const [editingArticle, setEditingArticle] = useState(null)
   const [showEditor, setShowEditor] = useState(false)
 
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
 
-  const [categorySearch, setCategorySearch] = useState("")
-  const [newCategoryName, setNewCategoryName] = useState("")
-  const [creatingCategory, setCreatingCategory] = useState(false)
-
   const isSuperAdmin = admin?.role === "SUPER_ADMIN"
-
-  const filteredCategories = useMemo(() => {
-    const query = categorySearch.trim().toLowerCase()
-
-    if (!query) return categories
-
-    return categories.filter((category) =>
-      category.name.toLowerCase().includes(query)
-    )
-  }, [categories, categorySearch])
 
   async function loadAdmin() {
     const {
@@ -143,9 +106,7 @@ export default function ArticlesPage() {
 
     setArticles(rows)
 
-    await loadArticleViews(
-      rows.map((row) => row.id)
-    )
+    await loadArticleViews(rows.map((row) => row.id))
 
     if (!rows.length) {
       setCategoryByPost({})
@@ -178,7 +139,7 @@ export default function ArticlesPage() {
 
     setCategoryByPost(lookup)
   }
-  async function loadCategories() {
+async function loadCategories() {
     const { data, error: categoriesError } = await supabase
       .from("categories")
       .select("id,name,slug,parent_id,description")
@@ -200,10 +161,7 @@ export default function ArticlesPage() {
     try {
       await loadAdmin()
 
-      await Promise.all([
-        loadArticles(),
-        loadCategories(),
-      ])
+      await Promise.all([loadArticles(), loadCategories()])
     } catch (err) {
       console.error(err)
       setError(err.message || "Could not load Articles.")
@@ -216,385 +174,43 @@ export default function ArticlesPage() {
     loadData()
   }, [])
 
-  function resetEditor() {
-    setEditingId(null)
-
-    setForm({
-      ...EMPTY_FORM,
-      category_ids: [],
-    })
-
-    setCategorySearch("")
-    setNewCategoryName("")
-  }
-
   function openNewArticle() {
-    resetEditor()
+    setEditingArticle(null)
     setMessage("")
     setError("")
     setShowEditor(true)
   }
 
   function editArticle(article) {
-    setEditingId(article.id)
-
-    setForm({
-      title: article.title || "",
-      slug: article.slug || "",
-      excerpt: article.excerpt || "",
-      content_html: article.content_html || "",
-      featured_image: article.featured_image || "",
-      seo_title: article.seo_title || "",
-      meta_description: article.meta_description || "",
-      canonical_url: article.canonical_url || "",
-      no_index: Boolean(article.no_index),
-      category_ids: [
-        ...(categoryByPost[article.id] || []),
-      ],
-    })
-
+    setEditingArticle(article)
     setMessage("")
     setError("")
-    setCategorySearch("")
-    setNewCategoryName("")
     setShowEditor(true)
   }
 
-  function updateField(field, value) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }))
+  function closeEditor() {
+    setShowEditor(false)
+    setEditingArticle(null)
   }
 
-  function toggleCategory(categoryId) {
-    setForm((current) => {
-      const currentIds = current.category_ids || []
-      const selected = currentIds.includes(categoryId)
-
-      return {
-        ...current,
-        category_ids: selected
-          ? currentIds.filter(
-              (id) => id !== categoryId
-            )
-          : [...currentIds, categoryId],
-      }
-    })
+  async function handleSaved() {
+    setMessage(
+      editingArticle
+        ? "Article saved successfully."
+        : "Article created successfully."
+    )
+    closeEditor()
+    await loadArticles()
+    await loadCategories()
   }
 
-  async function createCategory() {
-    const name = newCategoryName.trim()
-
-    if (!name) {
-      setError("Enter a category name first.")
-      return
-    }
-
-    setCreatingCategory(true)
-    setError("")
-    setMessage("")
-
-    try {
-      const slug = makeSlug(name)
-
-      if (!slug) {
-        throw new Error(
-          "That category name cannot create a valid slug."
-        )
-      }
-
-      const {
-        data: existing,
-        error: existingError,
-      } = await supabase
-        .from("categories")
-        .select(
-          "id,name,slug,parent_id,description"
-        )
-        .eq("slug", slug)
-        .maybeSingle()
-
-      if (existingError) {
-        throw new Error(
-          `Could not check category: ${existingError.message}`
-        )
-      }
-
-      let category = existing
-
-      if (!category) {
-        const {
-          data: created,
-          error: createError,
-        } = await supabase
-          .from("categories")
-          .insert({
-            name,
-            slug,
-          })
-          .select(
-            "id,name,slug,parent_id,description"
-          )
-          .single()
-
-        if (createError) {
-          throw new Error(
-            `Could not create category: ${createError.message}`
-          )
-        }
-
-        category = created
-      }
-
-      setCategories((current) => {
-        if (
-          current.some(
-            (item) => item.id === category.id
-          )
-        ) {
-          return current
-        }
-
-        return [...current, category].sort(
-          (a, b) =>
-            a.name.localeCompare(b.name)
-        )
-      })
-
-      setForm((current) => ({
-        ...current,
-        category_ids: [
-          ...(current.category_ids || []),
-          category.id,
-        ].filter(
-          (id, index, array) =>
-            array.indexOf(id) === index
-        ),
-      }))
-
-      setNewCategoryName("")
-
-      setMessage(
-        existing
-          ? `"${category.name}" already existed and was selected.`
-          : `"${category.name}" created and selected.`
-      )
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not create category."
-      )
-    } finally {
-      setCreatingCategory(false)
-    }
-  }
-
-  async function saveCategories(
-    postId,
-    categoryIds
-  ) {
-    const { error: deleteError } =
-      await supabase
-        .from("post_categories")
-        .delete()
-        .eq("post_id", postId)
-
-    if (deleteError) {
-      throw new Error(
-        `Could not update article categories: ${deleteError.message}`
-      )
-    }
-
-    const ids = [
-      ...new Set(categoryIds || []),
-    ]
-
-    if (!ids.length) return
-
-    const rows = ids.map((categoryId) => ({
-      post_id: postId,
-      category_id: categoryId,
-    }))
-
-    const { error: insertError } =
-      await supabase
-        .from("post_categories")
-        .insert(rows)
-
-    if (insertError) {
-      throw new Error(
-        `Could not save article categories: ${insertError.message}`
-      )
-    }
-  }
-
-  async function saveArticle(status) {
-    if (!admin) {
-      setError(
-        "Admin account has not loaded."
-      )
-      return
-    }
-
-    if (
-      !isSuperAdmin &&
-      status === "PUBLISHED"
-    ) {
-      setError(
-        "Only a SUPER_ADMIN can publish an article."
-      )
-      return
-    }
-
-    setSaving(true)
-    setMessage("")
-    setError("")
-
-    try {
-      const title = form.title.trim()
-      const slug =
-        form.slug.trim() ||
-        makeSlug(title)
-
-      if (!title) {
-        throw new Error(
-          "Article title is required."
-        )
-      }
-
-      if (!slug) {
-        throw new Error(
-          "Article slug is required."
-        )
-      }
-
-      const now =
-        new Date().toISOString()
-
-      const payload = {
-        title,
-        slug,
-        excerpt:
-          form.excerpt.trim() || null,
-        content_html:
-          form.content_html || "",
-        featured_image:
-          form.featured_image.trim() ||
-          null,
-        status,
-        published_at:
-          status === "PUBLISHED"
-            ? now
-            : null,
-        seo_title:
-          form.seo_title.trim() || null,
-        meta_description:
-          form.meta_description.trim() ||
-          null,
-        canonical_url:
-          form.canonical_url.trim() ||
-          null,
-        no_index:
-          Boolean(form.no_index),
-        updated_at: now,
-      }
-
-      let saved
-
-      if (editingId) {
-        const {
-          data,
-          error: updateError,
-        } = await supabase
-          .from("posts")
-          .update(payload)
-          .eq("id", editingId)
-          .select()
-          .single()
-
-        if (updateError) {
-          throw new Error(
-            `Could not update article: ${updateError.message}`
-          )
-        }
-
-        saved = data
-      } else {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser()
-
-        if (!user) {
-          throw new Error(
-            "Authentication session missing."
-          )
-        }
-
-        const {
-          data,
-          error: insertError,
-        } = await supabase
-          .from("posts")
-          .insert({
-            ...payload,
-            author_id: user.id,
-          })
-          .select()
-          .single()
-
-        if (insertError) {
-          throw new Error(
-            `Could not create article: ${insertError.message}`
-          )
-        }
-
-        saved = data
-      }
-
-      if (saved?.id) {
-        await saveCategories(
-          saved.id,
-          form.category_ids
-        )
-      }
-
-      setMessage(
-        status === "PUBLISHED"
-          ? "Article published successfully."
-          : "Article saved successfully."
-      )
-
-      setShowEditor(false)
-      resetEditor()
-
-      await loadArticles()
-    } catch (err) {
-      console.error(err)
-
-      setError(
-        err.message ||
-          "Could not save article."
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
   async function deleteArticle(id) {
     if (!isSuperAdmin) {
-      setError(
-        "Only a SUPER_ADMIN can delete articles."
-      )
+      setError("Only a SUPER_ADMIN can delete articles.")
       return
     }
 
-    if (
-      !window.confirm(
-        "Delete this article permanently?"
-      )
-    ) {
+    if (!window.confirm("Delete this article permanently?")) {
       return
     }
 
@@ -602,9 +218,7 @@ export default function ArticlesPage() {
     setMessage("")
 
     try {
-      const {
-        error: relationError,
-      } = await supabase
+      const { error: relationError } = await supabase
         .from("post_categories")
         .delete()
         .eq("post_id", id)
@@ -615,43 +229,29 @@ export default function ArticlesPage() {
         )
       }
 
-      const {
-        error: postError,
-      } = await supabase
+      const { error: postError } = await supabase
         .from("posts")
         .delete()
         .eq("id", id)
 
       if (postError) {
-        throw new Error(
-          `Could not delete article: ${postError.message}`
-        )
+        throw new Error(`Could not delete article: ${postError.message}`)
       }
 
       setMessage("Article deleted.")
-
       await loadArticles()
     } catch (err) {
       console.error(err)
-
-      setError(
-        err.message ||
-          "Could not delete article."
-      )
+      setError(err.message || "Could not delete article.")
     }
   }
 
   function getCategoryNames(articleId) {
-    const ids =
-      categoryByPost[articleId] || []
+    const ids = categoryByPost[articleId] || []
 
     return ids
       .map((id) => {
-        const category =
-          categories.find(
-            (item) => item.id === id
-          )
-
+        const category = categories.find((item) => item.id === id)
         return category?.name
       })
       .filter(Boolean)
@@ -677,500 +277,28 @@ export default function ArticlesPage() {
 
   if (showEditor) {
     return (
-      <main>
-        <div className="row spread">
-          <div>
-            <h1 className="h1">
-              {editingId
-                ? "Edit Article"
-                : "New Article"}
-            </h1>
-
-            <p className="muted">
-              Signed in as {admin?.email}
-            </p>
-          </div>
-
-          <button
-            className="btn"
-            type="button"
-            onClick={() => {
-              setShowEditor(false)
-              resetEditor()
-            }}
-          >
-            Back
-          </button>
-        </div>
-
-        {message && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-            }}
-          >
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div
-            className="card"
-            style={{
-              marginTop: "18px",
-              color: "#b00020",
-            }}
-          >
-            {error}
-          </div>
-        )}
-
-        <div
-          className="grid grid3"
-          style={{
-            marginTop: "18px",
-          }}
-        >
-          <section
-            className="card"
-            style={{
-              gridColumn: "span 2",
-            }}
-          >
-            <label>Title</label>
-
-            <input
-              className="input"
-              value={form.title}
-              onChange={(event) =>
-                updateField(
-                  "title",
-                  event.target.value
-                )
-              }
-              onBlur={() => {
-                if (!editingId) {
-                  updateField(
-                    "slug",
-                    makeSlug(form.title)
-                  )
-                }
-              }}
-              placeholder="Article title"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Slug
-            </label>
-
-            <input
-              className="input"
-              value={form.slug}
-              onChange={(event) =>
-                updateField(
-                  "slug",
-                  makeSlug(
-                    event.target.value
-                  )
-                )
-              }
-              placeholder="article-slug"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Excerpt
-            </label>
-
-            <textarea
-              className="input"
-              rows="4"
-              value={form.excerpt}
-              onChange={(event) =>
-                updateField(
-                  "excerpt",
-                  event.target.value
-                )
-              }
-              placeholder="Short article summary"
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Article Content
-            </label>
-
-            <textarea
-              className="input"
-              rows="20"
-              value={form.content_html}
-              onChange={(event) =>
-                updateField(
-                  "content_html",
-                  event.target.value
-                )
-              }
-              placeholder="Write your article here. HTML is supported."
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-              }}
-            >
-              Featured Image URL
-            </label>
-
-            <input
-              className="input"
-              value={form.featured_image}
-              onChange={(event) =>
-                updateField(
-                  "featured_image",
-                  event.target.value
-                )
-              }
-              placeholder="https://..."
-            />
-          </section>
-
-          <aside className="card">
-            <h2 className="h2">
-              Publishing
-            </h2>
-
-            <p
-              className="muted"
-              style={{
-                marginTop: "8px",
-              }}
-            >
-              Role:{" "}
-              <strong>
-                {admin?.role}
-              </strong>
-            </p>
-
-            <div
-              style={{
-                marginTop: "20px",
-              }}
-            >
-              <label>
-                Categories
-              </label>
-
-              <input
-                className="input"
-                style={{
-                  marginTop: "8px",
-                }}
-                value={categorySearch}
-                onChange={(event) =>
-                  setCategorySearch(
-                    event.target.value
-                  )
-                }
-                placeholder="Search categories..."
-              />
-
-              <div
-                style={{
-                  marginTop: "10px",
-                  border:
-                    "1px solid #ddd",
-                  borderRadius: "12px",
-                  padding: "10px",
-                  maxHeight: "250px",
-                  overflowY: "auto",
-                }}
-              >
-                {filteredCategories.length ===
-                0 ? (
-                  <p
-                    className="muted"
-                    style={{
-                      margin: 0,
-                    }}
-                  >
-                    No categories found.
-                  </p>
-                ) : (
-                  filteredCategories.map(
-                    (category) => {
-                      const selected = (
-                        form.category_ids ||
-                        []
-                      ).includes(
-                        category.id
-                      )
-
-                      return (
-                        <label
-                          key={category.id}
-                          style={{
-                            display: "flex",
-                            alignItems:
-                              "center",
-                            gap: "10px",
-                            padding:
-                              "8px 4px",
-                            cursor:
-                              "pointer",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={
-                              selected
-                            }
-                            onChange={() =>
-                              toggleCategory(
-                                category.id
-                              )
-                            }
-                          />
-
-                          <span>
-                            {category.name}
-                          </span>
-                        </label>
-                      )
-                    }
-                  )
-                )}
-              </div>
-
-              <p
-                className="muted"
-                style={{
-                  marginTop: "8px",
-                  fontSize: "13px",
-                }}
-              >
-                Selected:{" "}
-                {
-                  (
-                    form.category_ids ||
-                    []
-                  ).length
-                }
-              </p>
-
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginTop: "12px",
-                }}
-              >
-                <input
-                  className="input"
-                  value={
-                    newCategoryName
-                  }
-                  onChange={(event) =>
-                    setNewCategoryName(
-                      event.target.value
-                    )
-                  }
-                  placeholder="Create new category..."
-                />
-
-                <button
-                  type="button"
-                  className="btn"
-                  onClick={
-                    createCategory
-                  }
-                  disabled={
-                    creatingCategory
-                  }
-                >
-                  {creatingCategory
-                    ? "Creating..."
-                    : "+ Create"}
-                </button>
-              </div>
-            </div>
-
-            <button
-              className="btn"
-              style={{
-                marginTop: "20px",
-                width: "100%",
-              }}
-              disabled={saving}
-              onClick={() =>
-                saveArticle("DRAFT")
-              }
-            >
-              {saving
-                ? "Saving..."
-                : "Save Draft"}
-            </button>
-
-            {isSuperAdmin && (
-              <button
-                className="btn primary"
-                style={{
-                  marginTop: "10px",
-                  width: "100%",
-                }}
-                disabled={saving}
-                onClick={() =>
-                  saveArticle(
-                    "PUBLISHED"
-                  )
-                }
-              >
-                {saving
-                  ? "Publishing..."
-                  : "Publish Article"}
-              </button>
-            )}
-
-            {!isSuperAdmin && (
-              <p
-                className="muted"
-                style={{
-                  marginTop: "12px",
-                  fontSize: "13px",
-                }}
-              >
-                Contributors can write
-                and save articles as
-                drafts. Only a
-                SUPER_ADMIN can publish.
-              </p>
-            )}
-
-            <h2
-              className="h2"
-              style={{
-                marginTop: "28px",
-              }}
-            >
-              SEO
-            </h2>
-
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              SEO Title
-            </label>
-
-            <input
-              className="input"
-              value={form.seo_title}
-              onChange={(event) =>
-                updateField(
-                  "seo_title",
-                  event.target.value
-                )
-              }
-            />
-
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              Meta Description
-            </label>
-
-            <textarea
-              className="input"
-              rows="5"
-              value={
-                form.meta_description
-              }
-              onChange={(event) =>
-                updateField(
-                  "meta_description",
-                  event.target.value
-                )
-              }
-            />
-
-            <label
-              style={{
-                marginTop: "12px",
-              }}
-            >
-              Canonical URL
-            </label>
-
-            <input
-              className="input"
-              value={
-                form.canonical_url
-              }
-              onChange={(event) =>
-                updateField(
-                  "canonical_url",
-                  event.target.value
-                )
-              }
-              placeholder="https://..."
-            />
-
-            <label
-              style={{
-                marginTop: "16px",
-                display: "flex",
-                gap: "8px",
-                alignItems: "center",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={form.no_index}
-                onChange={(event) =>
-                  updateField(
-                    "no_index",
-                    event.target.checked
-                  )
-                }
-              />
-
-              Hide from search engines
-            </label>
-          </aside>
-        </div>
-      </main>
+      <ArticleEditor
+        initialArticle={editingArticle}
+        initialCategoryIds={
+          editingArticle ? categoryByPost[editingArticle.id] || [] : []
+        }
+        categories={categories}
+        admin={admin}
+        onSaved={handleSaved}
+        onCancel={closeEditor}
+      />
     )
   }
-  return (
+return (
     <main>
       <div className="row spread">
         <div>
-          <h1 className="h1">
-            Articles
-          </h1>
+          <h1 className="h1">Articles</h1>
 
-          <p className="muted">
-            Manage THE INDEX editorial content.
-          </p>
+          <p className="muted">Manage THE INDEX editorial content.</p>
         </div>
 
-        <button
-          className="btn primary"
-          onClick={openNewArticle}
-        >
+        <button className="btn primary" onClick={openNewArticle}>
           New Article
         </button>
       </div>
@@ -1206,13 +334,10 @@ export default function ArticlesPage() {
       >
         {articles.length === 0 ? (
           <div>
-            <h2 className="h2">
-              No articles yet
-            </h2>
+            <h2 className="h2">No articles yet</h2>
 
             <p className="muted">
-              Create your first article using
-              the button above.
+              Create your first article using the button above.
             </p>
           </div>
         ) : (
@@ -1223,43 +348,25 @@ export default function ArticlesPage() {
             }}
           >
             {articles.map((article) => {
-              const names =
-                getCategoryNames(article.id)
-
-              const views =
-                getViewCount(article.id)
+              const names = getCategoryNames(article.id)
+              const views = getViewCount(article.id)
 
               return (
                 <article
                   key={article.id}
                   style={{
-                    border:
-                      "1px solid #e5e5e5",
+                    border: "1px solid #e5e5e5",
                     borderRadius: "14px",
                     padding: "16px",
                   }}
                 >
                   <div className="row spread">
-                    <div
-                      style={{
-                        minWidth: 0,
-                      }}
-                    >
-                      <h2
-                        className="h2"
-                        style={{
-                          margin: 0,
-                        }}
-                      >
+                    <div style={{ minWidth: 0 }}>
+                      <h2 className="h2" style={{ margin: 0 }}>
                         {article.title}
                       </h2>
 
-                      <p
-                        className="muted"
-                        style={{
-                          marginTop: "6px",
-                        }}
-                      >
+                      <p className="muted" style={{ marginTop: "6px" }}>
                         /{article.slug}
                       </p>
 
@@ -1269,62 +376,44 @@ export default function ArticlesPage() {
                           flexWrap: "wrap",
                           gap: "6px",
                           marginTop: "10px",
-                          alignItems:
-                            "center",
+                          alignItems: "center",
                         }}
                       >
                         <span
                           style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 9px",
-                            fontSize:
-                              "12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "4px 9px",
+                            fontSize: "12px",
                           }}
                         >
                           {article.status}
                         </span>
 
-                        {names.map(
-                          (name) => (
-                            <span
-                              key={name}
-                              style={{
-                                border:
-                                  "1px solid #ddd",
-                                borderRadius:
-                                  "999px",
-                                padding:
-                                  "4px 9px",
-                                fontSize:
-                                  "12px",
-                              }}
-                            >
-                              {name}
-                            </span>
-                          )
-                        )}
+                        {names.map((name) => (
+                          <span
+                            key={name}
+                            style={{
+                              border: "1px solid #ddd",
+                              borderRadius: "999px",
+                              padding: "4px 9px",
+                              fontSize: "12px",
+                            }}
+                          >
+                            {name}
+                          </span>
+                        ))}
 
                         <span
                           style={{
-                            border:
-                              "1px solid #ddd",
-                            borderRadius:
-                              "999px",
-                            padding:
-                              "4px 10px",
-                            fontSize:
-                              "12px",
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "4px 10px",
+                            fontSize: "12px",
                             fontWeight: 600,
                           }}
                         >
-                          👁️ {views}{" "}
-                          {views === 1
-                            ? "view"
-                            : "views"}
+                          👁️ {views} {views === 1 ? "view" : "views"}
                         </span>
                       </div>
                     </div>
@@ -1333,19 +422,13 @@ export default function ArticlesPage() {
                       style={{
                         display: "flex",
                         gap: "8px",
-                        flexWrap:
-                          "wrap",
-                        justifyContent:
-                          "flex-end",
+                        flexWrap: "wrap",
+                        justifyContent: "flex-end",
                       }}
                     >
                       <button
                         className="btn"
-                        onClick={() =>
-                          editArticle(
-                            article
-                          )
-                        }
+                        onClick={() => editArticle(article)}
                       >
                         Edit
                       </button>
@@ -1353,11 +436,7 @@ export default function ArticlesPage() {
                       {isSuperAdmin && (
                         <button
                           className="btn"
-                          onClick={() =>
-                            deleteArticle(
-                              article.id
-                            )
-                          }
+                          onClick={() => deleteArticle(article.id)}
                         >
                           Delete
                         </button>
