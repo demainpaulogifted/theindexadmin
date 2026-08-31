@@ -14,9 +14,9 @@ const EMPTY_FORM = {
   category_id: "",
   countries: [],
   devices: ["mobile", "tablet", "desktop"],
+  active: true,
   start_at: "",
   end_at: "",
-  active: true,
 }
 
 const COUNTRY_OPTIONS = [
@@ -85,9 +85,7 @@ function isValidId(id) {
 }
 
 function formatDate(value) {
-  if (!value) {
-    return "—"
-  }
+  if (!value) return "—"
 
   try {
     return new Date(value).toLocaleString()
@@ -96,7 +94,7 @@ function formatDate(value) {
   }
 }
 
-function normaliseCountries(value) {
+function normalizeCountries(value) {
   if (Array.isArray(value)) {
     return value
   }
@@ -111,7 +109,7 @@ function normaliseCountries(value) {
   return []
 }
 
-function normaliseDevices(value) {
+function normalizeDevices(value) {
   if (Array.isArray(value)) {
     return value
   }
@@ -123,11 +121,7 @@ function normaliseDevices(value) {
       .filter(Boolean)
   }
 
-  return [
-    "mobile",
-    "tablet",
-    "desktop",
-  ]
+  return []
 }
 
 export default function AdsPage() {
@@ -136,7 +130,14 @@ export default function AdsPage() {
   const [ads, setAds] = useState([])
   const [articles, setArticles] = useState([])
   const [categories, setCategories] = useState([])
+
   const [admin, setAdmin] = useState(null)
+
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const [showEditor, setShowEditor] = useState(false)
+  const [editingId, setEditingId] = useState(null)
 
   const [form, setForm] = useState({
     ...EMPTY_FORM,
@@ -148,38 +149,16 @@ export default function AdsPage() {
     ],
   })
 
-  const [editingId, setEditingId] = useState(null)
-
-  const [showEditor, setShowEditor] =
-    useState(false)
-
-  const [loading, setLoading] =
-    useState(true)
-
-  const [saving, setSaving] =
-    useState(false)
-
-  const [message, setMessage] =
-    useState("")
-
-  const [error, setError] =
-    useState("")
+  const [message, setMessage] = useState("")
+  const [error, setError] = useState("")
 
   const isSuperAdmin =
     admin?.role === "SUPER_ADMIN"
 
-  const activeAds = useMemo(() => {
-    return ads.filter(
-      (ad) =>
-        Boolean(ad?.active)
-    ).length
-  }, [ads])
-
   const totalViews = useMemo(() => {
     return ads.reduce(
       (total, ad) =>
-        total +
-        Number(ad?.views || 0),
+        total + Number(ad.views || 0),
       0
     )
   }, [ads])
@@ -187,26 +166,27 @@ export default function AdsPage() {
   const totalClicks = useMemo(() => {
     return ads.reduce(
       (total, ad) =>
-        total +
-        Number(ad?.clicks || 0),
+        total + Number(ad.clicks || 0),
       0
     )
   }, [ads])
 
-  const totalCtr = useMemo(() => {
+  const activeAds = useMemo(() => {
+    return ads.filter(
+      (ad) => Boolean(ad.active)
+    ).length
+  }, [ads])
+
+  const ctr = useMemo(() => {
     if (!totalViews) {
       return "0.00"
     }
 
     return (
-      (totalClicks /
-        totalViews) *
+      (totalClicks / totalViews) *
       100
     ).toFixed(2)
-  }, [
-    totalViews,
-    totalClicks,
-  ])
+  }, [totalViews, totalClicks])
 
   async function loadAdmin() {
     const {
@@ -368,7 +348,7 @@ export default function AdsPage() {
     }))
   }
 
-  function resetEditor() {
+  function resetForm() {
     setEditingId(null)
 
     setForm({
@@ -384,13 +364,13 @@ export default function AdsPage() {
 
   function closeEditor() {
     setShowEditor(false)
-    resetEditor()
+    resetForm()
     setMessage("")
     setError("")
   }
 
   function openNewAd() {
-    resetEditor()
+    resetForm()
     setMessage("")
     setError("")
     setShowEditor(true)
@@ -407,8 +387,7 @@ export default function AdsPage() {
     setEditingId(ad.id)
 
     setForm({
-      title:
-        ad.title || "",
+      title: ad.title || "",
       image_url:
         ad.image_url || "",
       target_url:
@@ -423,13 +402,15 @@ export default function AdsPage() {
       category_id:
         ad.category_id || "",
       countries:
-        normaliseCountries(
+        normalizeCountries(
           ad.countries
         ),
       devices:
-        normaliseDevices(
+        normalizeDevices(
           ad.devices
         ),
+      active:
+        Boolean(ad.active),
       start_at:
         ad.start_at
           ? String(
@@ -442,8 +423,6 @@ export default function AdsPage() {
               ad.end_at
             ).slice(0, 16)
           : "",
-      active:
-        Boolean(ad.active),
     })
 
     setMessage("")
@@ -452,17 +431,19 @@ export default function AdsPage() {
   }
 
   function toggleCountry(
-    country
+    countryCode
   ) {
     setForm((current) => {
       const countries =
-        normaliseCountries(
+        Array.isArray(
           current.countries
         )
+          ? current.countries
+          : []
 
       const selected =
         countries.includes(
-          country
+          countryCode
         )
 
       return {
@@ -470,11 +451,12 @@ export default function AdsPage() {
         countries: selected
           ? countries.filter(
               (item) =>
-                item !== country
+                item !==
+                countryCode
             )
           : [
               ...countries,
-              country,
+              countryCode,
             ],
       }
     })
@@ -485,14 +467,14 @@ export default function AdsPage() {
   ) {
     setForm((current) => {
       const devices =
-        normaliseDevices(
+        Array.isArray(
           current.devices
         )
+          ? current.devices
+          : []
 
       const selected =
-        devices.includes(
-          device
-        )
+        devices.includes(device)
 
       return {
         ...current,
@@ -542,7 +524,7 @@ export default function AdsPage() {
       category_id: "",
     }))
   }
-  async function saveAd() {
+async function saveAd() {
     if (!admin) {
       setError(
         "Admin account has not loaded."
@@ -565,43 +547,25 @@ export default function AdsPage() {
       const title =
         form.title.trim()
 
-      const imageUrl =
-        form.image_url.trim()
-
-      const targetUrl =
-        form.target_url.trim()
-
       if (!title) {
         throw new Error(
-          "Advertisement title is required."
+          "Ad title is required."
         )
       }
 
-      if (!imageUrl) {
+      if (
+        !form.image_url?.trim()
+      ) {
         throw new Error(
-          "Advertisement image URL is required."
+          "Ad image URL is required."
         )
       }
 
-      if (!targetUrl) {
+      if (
+        !form.target_url?.trim()
+      ) {
         throw new Error(
-          "Advertisement destination URL is required."
-        )
-      }
-
-      const countries =
-        normaliseCountries(
-          form.countries
-        )
-
-      const devices =
-        normaliseDevices(
-          form.devices
-        )
-
-      if (devices.length === 0) {
-        throw new Error(
-          "Select at least one device."
+          "Ad destination URL is required."
         )
       }
 
@@ -631,31 +595,23 @@ export default function AdsPage() {
       }
 
       if (
-        form.article_id &&
-        !isValidId(
-          form.article_id
-        )
+        editingId &&
+        !isValidId(editingId)
       ) {
         throw new Error(
-          "The selected article has an invalid ID."
-        )
-      }
-
-      if (
-        form.category_id &&
-        !isValidId(
-          form.category_id
-        )
-      ) {
-        throw new Error(
-          "The selected category has an invalid ID."
+          "This advertisement has an invalid ID. Refresh the Ads list and try again."
         )
       }
 
       const payload = {
         title,
-        image_url: imageUrl,
-        target_url: targetUrl,
+
+        image_url:
+          form.image_url.trim(),
+
+        target_url:
+          form.target_url.trim(),
+
         alt_text:
           form.alt_text?.trim() ||
           null,
@@ -665,25 +621,41 @@ export default function AdsPage() {
           "between_articles",
 
         article_id:
-          form.article_id ||
-          null,
+          form.article_id || null,
 
         category_id:
-          form.category_id ||
-          null,
+          form.category_id || null,
 
-        countries,
+        countries:
+          Array.isArray(
+            form.countries
+          )
+            ? form.countries
+            : [],
 
-        devices,
+        devices:
+          Array.isArray(
+            form.devices
+          )
+            ? form.devices
+            : [],
 
         active:
           Boolean(form.active),
 
         start_at:
-          form.start_at || null,
+          form.start_at
+            ? new Date(
+                form.start_at
+              ).toISOString()
+            : null,
 
         end_at:
-          form.end_at || null,
+          form.end_at
+            ? new Date(
+                form.end_at
+              ).toISOString()
+            : null,
 
         updated_at:
           new Date().toISOString(),
@@ -692,20 +664,18 @@ export default function AdsPage() {
       let saved = null
 
       if (editingId) {
-        if (!isValidId(editingId)) {
-          throw new Error(
-            "This advertisement has an invalid ID. Refresh the Ads list and try again."
-          )
-        }
-
         const {
           data,
-          error: updateError,
+          error:
+            updateError,
         } = await supabase
           .from("ads")
           .update(payload)
-          .eq("id", editingId)
-          .select("*")
+          .eq(
+            "id",
+            editingId
+          )
+          .select()
           .maybeSingle()
 
         if (updateError) {
@@ -724,11 +694,12 @@ export default function AdsPage() {
       } else {
         const {
           data,
-          error: insertError,
+          error:
+            insertError,
         } = await supabase
           .from("ads")
           .insert(payload)
-          .select("*")
+          .select()
           .single()
 
         if (insertError) {
@@ -756,7 +727,7 @@ export default function AdsPage() {
       )
 
       setShowEditor(false)
-      resetEditor()
+      resetForm()
 
       await loadAds()
 
@@ -791,10 +762,11 @@ export default function AdsPage() {
       return
     }
 
-    const ad = ads.find(
-      (item) =>
-        item.id === id
-    )
+    const ad =
+      ads.find(
+        (item) =>
+          item.id === id
+      )
 
     if (!ad) {
       setError(
@@ -805,7 +777,10 @@ export default function AdsPage() {
 
     const confirmed =
       window.confirm(
-        `Delete "${ad.title || "this advertisement"}" permanently?`
+        `Delete "${
+          ad.title ||
+          "this advertisement"
+        }" permanently?`
       )
 
     if (!confirmed) {
@@ -817,8 +792,10 @@ export default function AdsPage() {
 
     try {
       const {
-        data: deletedRows,
-        error: deleteError,
+        data:
+          deletedRows,
+        error:
+          deleteError,
       } = await supabase
         .from("ads")
         .delete()
@@ -831,7 +808,9 @@ export default function AdsPage() {
         )
       }
 
-      if (!deletedRows?.length) {
+      if (
+        !deletedRows?.length
+      ) {
         throw new Error(
           "The advertisement was not deleted. It may no longer exist or you may not have permission to delete it."
         )
@@ -857,7 +836,9 @@ export default function AdsPage() {
     }
   }
 
-  async function toggleActive(ad) {
+  async function toggleAd(
+    ad
+  ) {
     if (!isSuperAdmin) {
       setError(
         "Only a SUPER_ADMIN can activate or deactivate advertisements."
@@ -877,11 +858,14 @@ export default function AdsPage() {
 
     try {
       const newActive =
-        !Boolean(ad.active)
+        !Boolean(
+          ad.active
+        )
 
       const {
         data,
-        error: updateError,
+        error:
+          updateError,
       } = await supabase
         .from("ads")
         .update({
@@ -889,7 +873,10 @@ export default function AdsPage() {
           updated_at:
             new Date().toISOString(),
         })
-        .eq("id", ad.id)
+        .eq(
+          "id",
+          ad.id
+        )
         .select(
           "id,active"
         )
@@ -930,121 +917,43 @@ export default function AdsPage() {
   }
 
   function getPlacementLabel(
-    placement
+    value
   ) {
     return (
       PLACEMENT_OPTIONS.find(
         (item) =>
-          item.value ===
-          placement
+          item.value === value
       )?.label ||
-      placement ||
+      value ||
       "All placements"
     )
   }
 
-  function getArticleTitle(
-    articleId
+  function getCountryName(
+    code
   ) {
-    if (!articleId) {
-      return ""
-    }
-
     return (
-      articles.find(
-        (article) =>
-          article.id ===
-          articleId
-      )?.title ||
-      ""
-    )
-  }
-
-  function getCategoryName(
-    categoryId
-  ) {
-    if (!categoryId) {
-      return ""
-    }
-
-    return (
-      categories.find(
-        (category) =>
-          category.id ===
-          categoryId
+      COUNTRY_OPTIONS.find(
+        (country) =>
+          country.code === code
       )?.name ||
-      ""
+      code
     )
   }
 
-  function renderStats() {
+  function getDeviceLabel(
+    value
+  ) {
     return (
-      <div
-        className="grid grid3"
-        style={{
-          marginTop: "18px",
-        }}
-      >
-        <div className="card">
-          <div className="muted">
-            Active Ads
-          </div>
-
-          <div
-            style={{
-              fontSize: "28px",
-              fontWeight: 700,
-              marginTop: "6px",
-            }}
-          >
-            {activeAds}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="muted">
-            Total Views
-          </div>
-
-          <div
-            style={{
-              fontSize: "28px",
-              fontWeight: 700,
-              marginTop: "6px",
-            }}
-          >
-            {totalViews.toLocaleString()}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="muted">
-            Clicks / CTR
-          </div>
-
-          <div
-            style={{
-              fontSize: "28px",
-              fontWeight: 700,
-              marginTop: "6px",
-            }}
-          >
-            {totalClicks.toLocaleString()}
-          </div>
-
-          <div
-            className="muted"
-            style={{
-              marginTop: "4px",
-            }}
-          >
-            {totalCtr}%
-          </div>
-        </div>
-      </div>
+      DEVICE_OPTIONS.find(
+        (device) =>
+          device.value === value
+      )?.label ||
+      value
     )
   }
-if (loading) {
+
+  if (loading) {
     return (
       <main
         style={{
@@ -1053,7 +962,9 @@ if (loading) {
           placeItems: "center",
         }}
       >
-        <p>Loading Advertising…</p>
+        <p>
+          Loading Advertising…
+        </p>
       </main>
     )
   }
@@ -1070,14 +981,17 @@ if (loading) {
             </h1>
 
             <p className="muted">
-              Signed in as {admin?.email}
+              Signed in as{" "}
+              {admin?.email}
             </p>
           </div>
 
           <button
             type="button"
             className="btn"
-            onClick={closeEditor}
+            onClick={
+              closeEditor
+            }
           >
             Back
           </button>
@@ -1124,92 +1038,26 @@ if (loading) {
 
             <label
               style={{
-                display: "block",
                 marginTop: "16px",
               }}
             >
-              Advertisement Name
+              Ad Title
             </label>
 
             <input
               className="input"
-              value={form.name}
+              value={form.title}
               onChange={(event) =>
                 updateField(
-                  "name",
+                  "title",
                   event.target.value
                 )
               }
-              placeholder="Campaign name"
+              placeholder="Advertisement title"
             />
 
             <label
               style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Advertiser Name
-            </label>
-
-            <input
-              className="input"
-              value={form.advertiser_name}
-              onChange={(event) =>
-                updateField(
-                  "advertiser_name",
-                  event.target.value
-                )
-              }
-              placeholder="Advertiser or company name"
-            />
-
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Headline
-            </label>
-
-            <input
-              className="input"
-              value={form.headline}
-              onChange={(event) =>
-                updateField(
-                  "headline",
-                  event.target.value
-                )
-              }
-              placeholder="Advertisement headline"
-            />
-
-            <label
-              style={{
-                display: "block",
-                marginTop: "16px",
-              }}
-            >
-              Description
-            </label>
-
-            <textarea
-              className="input"
-              rows="4"
-              value={form.description}
-              onChange={(event) =>
-                updateField(
-                  "description",
-                  event.target.value
-                )
-              }
-              placeholder="Short advertisement description"
-            />
-
-            <label
-              style={{
-                display: "block",
                 marginTop: "16px",
               }}
             >
@@ -1241,8 +1089,8 @@ if (loading) {
                 <img
                   src={form.image_url}
                   alt={
-                    form.headline ||
-                    form.name ||
+                    form.alt_text ||
+                    form.title ||
                     "Advertisement preview"
                   }
                   style={{
@@ -1261,7 +1109,6 @@ if (loading) {
 
             <label
               style={{
-                display: "block",
                 marginTop: "16px",
               }}
             >
@@ -1280,6 +1127,26 @@ if (loading) {
               placeholder="https://example.com"
             />
 
+            <label
+              style={{
+                marginTop: "16px",
+              }}
+            >
+              Alt Text
+            </label>
+
+            <input
+              className="input"
+              value={form.alt_text}
+              onChange={(event) =>
+                updateField(
+                  "alt_text",
+                  event.target.value
+                )
+              }
+              placeholder="Describe the advertisement image"
+            />
+
             <h2
               className="h2"
               style={{
@@ -1291,12 +1158,10 @@ if (loading) {
 
             <label
               style={{
-                display: "block",
                 marginTop: "16px",
               }}
             >
-              Where should this advertisement
-              appear?
+              Where should this ad appear?
             </label>
 
             <select
@@ -1309,13 +1174,13 @@ if (loading) {
                 )
               }
             >
-              {PLACEMENTS.map(
-                (placement) => (
+              {PLACEMENT_OPTIONS.map(
+                (option) => (
                   <option
-                    key={placement.value}
-                    value={placement.value}
+                    key={option.value}
+                    value={option.value}
                   >
-                    {placement.label}
+                    {option.label}
                   </option>
                 )
               )}
@@ -1336,9 +1201,9 @@ if (loading) {
                 marginTop: "6px",
               }}
             >
-              Optionally select one article
-              where this advertisement should
-              appear.
+              Choose an article if this
+              advertisement should appear
+              specifically on that article.
             </p>
 
             {articles.length === 0 ? (
@@ -1376,17 +1241,22 @@ if (loading) {
                           )
                         }
                         style={{
-                          textAlign: "left",
-                          border: selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
+                          textAlign:
+                            "left",
+                          border:
+                            selected
+                              ? "2px solid #111"
+                              : "1px solid #ddd",
                           borderRadius:
                             "10px",
-                          padding: "12px",
-                          background: selected
-                            ? "#f5f5f5"
-                            : "white",
-                          cursor: "pointer",
+                          padding:
+                            "12px",
+                          background:
+                            selected
+                              ? "#f5f5f5"
+                              : "white",
+                          cursor:
+                            "pointer",
                         }}
                       >
                         <strong>
@@ -1398,8 +1268,10 @@ if (loading) {
                           <div
                             className="muted"
                             style={{
-                              marginTop: "4px",
-                              fontSize: "13px",
+                              marginTop:
+                                "4px",
+                              fontSize:
+                                "13px",
                             }}
                           >
                             /{article.slug}
@@ -1427,9 +1299,9 @@ if (loading) {
                 marginTop: "6px",
               }}
             >
-              Optionally select one category
-              where this advertisement should
-              appear.
+              Choose a category if this
+              advertisement should appear
+              within that category.
             </p>
 
             {categories.length === 0 ? (
@@ -1466,24 +1338,27 @@ if (loading) {
                           )
                         }
                         style={{
-                          border: selected
-                            ? "2px solid #111"
-                            : "1px solid #ddd",
+                          border:
+                            selected
+                              ? "2px solid #111"
+                              : "1px solid #ddd",
                           borderRadius:
                             "999px",
                           padding:
                             "8px 12px",
-                          background: selected
-                            ? "#111"
-                            : "white",
-                          color: selected
-                            ? "white"
-                            : "#111",
-                          cursor: "pointer",
+                          background:
+                            selected
+                              ? "#111"
+                              : "white",
+                          color:
+                            selected
+                              ? "white"
+                              : "#111",
+                          cursor:
+                            "pointer",
                         }}
                       >
                         {category.name ||
-                          category.title ||
                           "Unnamed category"}
                       </button>
                     )
@@ -1500,7 +1375,9 @@ if (loading) {
                 style={{
                   marginTop: "12px",
                 }}
-                onClick={clearTargeting}
+                onClick={
+                  clearTargeting
+                }
               >
                 Clear Article/Category
               </button>
@@ -1518,9 +1395,9 @@ if (loading) {
                 marginTop: "8px",
               }}
             >
-              The advertisement will only
-              appear when the visitor matches
-              the selected targeting rules.
+              Your advertisement will only
+              be displayed when the visitor
+              matches the selected targeting.
             </p>
 
             <h3
@@ -1538,10 +1415,10 @@ if (loading) {
                 fontSize: "13px",
               }}
             >
-              Select the countries where this
-              advertisement is allowed to
-              appear. Leave empty for all
-              countries.
+              Select the countries where
+              this advertisement is allowed
+              to appear. Leave all unselected
+              to allow every country.
             </p>
 
             <div
@@ -1552,58 +1429,71 @@ if (loading) {
                 marginTop: "10px",
               }}
             >
-              {[
-                "NG",
-                "GH",
-                "KE",
-                "ZA",
-                "US",
-                "GB",
-                "CA",
-                "AU",
-                "DE",
-                "FR",
-                "IN",
-                "AE",
-              ].map((country) => {
-                const selected =
-                  form.countries.includes(
-                    country
-                  )
+              {COUNTRY_OPTIONS.map(
+                (country) => {
+                  const selected =
+                    form.countries.includes(
+                      country.code
+                    )
 
-                return (
-                  <button
-                    key={country}
-                    type="button"
-                    onClick={() =>
-                      toggleCountry(
-                        country
-                      )
-                    }
-                    style={{
-                      border: selected
-                        ? "2px solid #111"
-                        : "1px solid #ddd",
-                      borderRadius:
-                        "999px",
-                      padding:
-                        "7px 10px",
-                      background: selected
-                        ? "#111"
-                        : "white",
-                      color: selected
-                        ? "white"
-                        : "#111",
-                      cursor: "pointer",
-                      fontSize: "12px",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {country}
-                  </button>
-                )
-              })}
+                  return (
+                    <button
+                      key={country.code}
+                      type="button"
+                      onClick={() =>
+                        toggleCountry(
+                          country.code
+                        )
+                      }
+                      style={{
+                        border:
+                          selected
+                            ? "2px solid #111"
+                            : "1px solid #ddd",
+                        borderRadius:
+                          "999px",
+                        padding:
+                          "7px 10px",
+                        background:
+                          selected
+                            ? "#111"
+                            : "white",
+                        color:
+                          selected
+                            ? "white"
+                            : "#111",
+                        cursor:
+                          "pointer",
+                        fontSize:
+                          "12px",
+                        fontWeight:
+                          600,
+                      }}
+                    >
+                      {country.code}
+                    </button>
+                  )
+                }
+              )}
             </div>
+
+            {form.countries.length >
+              0 && (
+              <p
+                className="muted"
+                style={{
+                  marginTop: "8px",
+                  fontSize: "12px",
+                }}
+              >
+                Allowed countries:{" "}
+                {form.countries
+                  .map(
+                    getCountryName
+                  )
+                  .join(", ")}
+              </p>
+            )}
 
             <h3
               style={{
@@ -1628,43 +1518,50 @@ if (loading) {
             <div
               style={{
                 display: "grid",
-                gap: "8px",
+                gap: "9px",
                 marginTop: "10px",
               }}
             >
-              {DEVICES.map((device) => {
-                const selected =
-                  form.devices.includes(
-                    device.value
+              {DEVICE_OPTIONS.map(
+                (device) => {
+                  const selected =
+                    form.devices.includes(
+                      device.value
+                    )
+
+                  return (
+                    <label
+                      key={device.value}
+                      style={{
+                        display:
+                          "flex",
+                        gap: "8px",
+                        alignItems:
+                          "center",
+                        cursor:
+                          "pointer",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={
+                          selected
+                        }
+                        onChange={() =>
+                          toggleDevice(
+                            device.value
+                          )
+                        }
+                      />
+
+                      {device.label}
+                    </label>
                   )
-
-                return (
-                  <label
-                    key={device.value}
-                    style={{
-                      display: "flex",
-                      gap: "8px",
-                      alignItems:
-                        "center",
-                      cursor: "pointer",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() =>
-                        toggleDevice(
-                          device.value
-                        )
-                      }
-                    />
-
-                    {device.label}
-                  </label>
-                )
-              })}
+                }
+              )}
             </div>
-<h3
+
+            <h3
               style={{
                 marginTop: "24px",
               }}
@@ -1684,7 +1581,9 @@ if (loading) {
             <input
               className="input"
               type="datetime-local"
-              value={form.start_at}
+              value={
+                form.start_at
+              }
               onChange={(event) =>
                 updateField(
                   "start_at",
@@ -1705,7 +1604,9 @@ if (loading) {
             <input
               className="input"
               type="datetime-local"
-              value={form.end_at}
+              value={
+                form.end_at
+              }
               onChange={(event) =>
                 updateField(
                   "end_at",
@@ -1718,7 +1619,8 @@ if (loading) {
               style={{
                 display: "flex",
                 gap: "8px",
-                alignItems: "center",
+                alignItems:
+                  "center",
                 marginTop: "18px",
                 cursor: "pointer",
               }}
@@ -1726,14 +1628,12 @@ if (loading) {
               <input
                 type="checkbox"
                 checked={
-                  form.status === "ACTIVE"
+                  form.active
                 }
                 onChange={(event) =>
                   updateField(
-                    "status",
+                    "active",
                     event.target.checked
-                      ? "ACTIVE"
-                      : "INACTIVE"
                   )
                 }
               />
@@ -1766,11 +1666,18 @@ if (loading) {
                 marginTop: "10px",
               }}
               disabled={saving}
-              onClick={closeEditor}
+              onClick={
+                closeEditor
+              }
             >
               Cancel
             </button>
           </aside>
+        </div>
+      </main>
+    )
+  }
+          </div>
         </div>
       </main>
     )
@@ -1793,7 +1700,7 @@ if (loading) {
         <button
           type="button"
           className="btn primary"
-          onClick={openNewAd}
+          onClick={openNewCampaign}
         >
           New Advertisement
         </button>
@@ -1835,7 +1742,7 @@ if (loading) {
 
           <div
             style={{
-              fontSize: "28px",
+              fontSize: "30px",
               fontWeight: 700,
               marginTop: "6px",
             }}
@@ -1851,7 +1758,7 @@ if (loading) {
 
           <div
             style={{
-              fontSize: "28px",
+              fontSize: "30px",
               fontWeight: 700,
               marginTop: "6px",
             }}
@@ -1862,12 +1769,12 @@ if (loading) {
 
         <div className="card">
           <div className="muted">
-            Clicks / CTR
+            Total Clicks
           </div>
 
           <div
             style={{
-              fontSize: "28px",
+              fontSize: "30px",
               fontWeight: 700,
               marginTop: "6px",
             }}
@@ -1878,7 +1785,8 @@ if (loading) {
           <div
             className="muted"
             style={{
-              marginTop: "4px",
+              marginTop: "5px",
+              fontSize: "13px",
             }}
           >
             CTR: {ctr}%
@@ -1898,7 +1806,12 @@ if (loading) {
               No advertisements yet
             </h2>
 
-            <p className="muted">
+            <p
+              className="muted"
+              style={{
+                marginTop: "6px",
+              }}
+            >
               Create your first advertisement
               using the button above.
             </p>
@@ -1914,20 +1827,11 @@ if (loading) {
               const validId =
                 isValidId(ad?.id)
 
-              const placementLabel =
-                PLACEMENTS.find(
-                  (item) =>
-                    item.value ===
-                    ad.placement
-                )?.label ||
-                ad.placement ||
-                "All placements"
-
               const adViews =
-                Number(ad.views || 0)
+                Number(ad?.views || 0)
 
               const adClicks =
-                Number(ad.clicks || 0)
+                Number(ad?.clicks || 0)
 
               const adCtr =
                 adViews > 0
@@ -1943,7 +1847,7 @@ if (loading) {
                   key={
                     validId
                       ? ad.id
-                      : `${ad.name || "ad"}-${ad.created_at || Math.random()}`
+                      : `${ad?.title || "ad"}-${ad?.created_at || Math.random()}`
                   }
                   style={{
                     border:
@@ -1965,8 +1869,7 @@ if (loading) {
                           margin: 0,
                         }}
                       >
-                        {ad.name ||
-                          ad.headline ||
+                        {ad.title ||
                           "Untitled advertisement"}
                       </h2>
 
@@ -1990,7 +1893,13 @@ if (loading) {
                         }}
                       >
                         Placement:{" "}
-                        {placementLabel}
+                        {placementOptions.find(
+                          (item) =>
+                            item.value ===
+                            ad.placement
+                        )?.label ||
+                          ad.placement ||
+                          "All placements"}
                       </div>
 
                       <div
@@ -2013,8 +1922,7 @@ if (loading) {
                               "12px",
                           }}
                         >
-                          {ad.status ===
-                          "ACTIVE"
+                          {ad.active
                             ? "ACTIVE"
                             : "INACTIVE"}
                         </span>
@@ -2047,8 +1955,8 @@ if (loading) {
                                 "4px 9px",
                               fontSize:
                                 "12px",
-                            }}
-                          >
+                              }}
+                            >
                             CATEGORY TARGETED
                           </span>
                         )}
@@ -2147,7 +2055,7 @@ if (loading) {
                             ? `Starts: ${formatDate(
                                 ad.start_at
                               )}`
-                            : "No start date"}
+                            : "Starts immediately"}
 
                           {" · "}
 
@@ -2189,8 +2097,7 @@ if (loading) {
                           toggleAd(ad)
                         }
                       >
-                        {ad.status ===
-                        "ACTIVE"
+                        {ad.active
                           ? "Deactivate"
                           : "Activate"}
                       </button>
@@ -2222,8 +2129,7 @@ if (loading) {
                         src={ad.image_url}
                         alt={
                           ad.alt_text ||
-                          ad.headline ||
-                          ad.name ||
+                          ad.title ||
                           "Advertisement"
                         }
                         style={{
@@ -2231,6 +2137,10 @@ if (loading) {
                           maxHeight: "220px",
                           objectFit: "cover",
                           display: "block",
+                        }}
+                        onError={(event) => {
+                          event.currentTarget.style.display =
+                            "none"
                         }}
                       />
                     </div>
