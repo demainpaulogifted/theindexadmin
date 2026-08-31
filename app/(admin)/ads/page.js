@@ -135,15 +135,19 @@ export default function AdvertisingPage() {
   const [ads, setAds] = useState([])
   const [articles, setArticles] = useState([])
   const [categories, setCategories] = useState([])
-
   const [admin, setAdmin] = useState(null)
 
   const [form, setForm] = useState({
     ...EMPTY_FORM,
+    countries: [],
+    devices: [
+      "mobile",
+      "tablet",
+      "desktop",
+    ],
   })
 
   const [editingId, setEditingId] = useState(null)
-
   const [showEditor, setShowEditor] = useState(false)
 
   const [loading, setLoading] = useState(true)
@@ -368,7 +372,7 @@ export default function AdvertisingPage() {
     setError("")
   }
 
-  function openNewCampaign() {
+  function openNewAdvertisement() {
     resetForm()
     setMessage("")
     setError("")
@@ -417,9 +421,7 @@ export default function AdvertisingPage() {
       end_at:
         ad.end_at || "",
       active:
-        Boolean(
-          ad.active
-        ),
+        Boolean(ad.active),
     })
 
     setMessage("")
@@ -427,9 +429,7 @@ export default function AdvertisingPage() {
     setShowEditor(true)
   }
 
-  function toggleCountry(
-    country
-  ) {
+  function toggleCountry(country) {
     setForm((current) => {
       const countries =
         Array.isArray(
@@ -456,9 +456,7 @@ export default function AdvertisingPage() {
     })
   }
 
-  function toggleDevice(
-    device
-  ) {
+  function toggleDevice(device) {
     setForm((current) => {
       const devices =
         Array.isArray(
@@ -485,9 +483,7 @@ export default function AdvertisingPage() {
     })
   }
 
-  function toggleArticle(
-    articleId
-  ) {
+  function toggleArticle(articleId) {
     setForm((current) => ({
       ...current,
       article_id:
@@ -498,9 +494,7 @@ export default function AdvertisingPage() {
     }))
   }
 
-  function toggleCategory(
-    categoryId
-  ) {
+  function toggleCategory(categoryId) {
     setForm((current) => ({
       ...current,
       category_id:
@@ -518,6 +512,7 @@ export default function AdvertisingPage() {
       category_id: "",
     }))
   }
+
   async function saveAd() {
     if (!admin) {
       setError(
@@ -570,38 +565,29 @@ export default function AdvertisingPage() {
         advertiser_name:
           form.advertiser_name.trim() ||
           null,
-
         description:
           form.description.trim() ||
           null,
-
         image_url:
           form.image_url.trim(),
-
         target_url:
           form.target_url.trim(),
-
         alt_text:
           form.alt_text.trim() ||
           null,
-
         placement:
           form.placement ||
           "between_articles",
-
         article_id:
           form.article_id || null,
-
         category_id:
           form.category_id || null,
-
         countries:
           Array.isArray(
             form.countries
           )
             ? form.countries
             : [],
-
         devices:
           Array.isArray(
             form.devices
@@ -612,18 +598,13 @@ export default function AdvertisingPage() {
                 "tablet",
                 "desktop",
               ],
-
         start_at:
           form.start_at || null,
-
         end_at:
           form.end_at || null,
-
-        active:
-          isSuperAdmin
-            ? Boolean(form.active)
-            : false,
-
+        active: isSuperAdmin
+          ? Boolean(form.active)
+          : false,
         updated_at:
           new Date().toISOString(),
       }
@@ -706,8 +687,7 @@ export default function AdvertisingPage() {
       setSaving(false)
     }
   }
-
-  async function deleteAd(id) {
+async function deleteAd(id) {
     if (!isSuperAdmin) {
       setError(
         "Only a SUPER_ADMIN can delete advertisements."
@@ -723,7 +703,7 @@ export default function AdvertisingPage() {
     }
 
     const ad = ads.find(
-      (item) => item.id === id
+      (item) => item?.id === id
     )
 
     if (!ad) {
@@ -742,8 +722,9 @@ export default function AdvertisingPage() {
       return
     }
 
-    setError("")
+    setSaving(true)
     setMessage("")
+    setError("")
 
     try {
       const {
@@ -761,10 +742,7 @@ export default function AdvertisingPage() {
         )
       }
 
-      if (
-        !deletedRows ||
-        deletedRows.length === 0
-      ) {
+      if (!deletedRows?.length) {
         throw new Error(
           "The advertisement was not deleted. It may no longer exist or you may not have permission to delete it."
         )
@@ -785,10 +763,12 @@ export default function AdvertisingPage() {
         err?.message ||
           "Could not delete advertisement."
       )
+    } finally {
+      setSaving(false)
     }
   }
 
-  async function toggleActive(ad) {
+  async function toggleAd(ad) {
     if (!isSuperAdmin) {
       setError(
         "Only a SUPER_ADMIN can activate or deactivate advertisements."
@@ -803,8 +783,9 @@ export default function AdvertisingPage() {
       return
     }
 
-    setError("")
+    setSaving(true)
     setMessage("")
+    setError("")
 
     try {
       const {
@@ -813,15 +794,12 @@ export default function AdvertisingPage() {
       } = await supabase
         .from("ads")
         .update({
-          active:
-            !Boolean(ad.active),
+          active: !Boolean(ad.active),
           updated_at:
             new Date().toISOString(),
         })
         .eq("id", ad.id)
-        .select(
-          "id,active"
-        )
+        .select("id,active")
         .maybeSingle()
 
       if (updateError) {
@@ -832,7 +810,7 @@ export default function AdvertisingPage() {
 
       if (!data) {
         throw new Error(
-          "The advertisement could not be found."
+          "The advertisement could not be found. Refresh the Ads list and try again."
         )
       }
 
@@ -853,31 +831,51 @@ export default function AdvertisingPage() {
         err?.message ||
           "Could not change advertisement status."
       )
+    } finally {
+      setSaving(false)
     }
   }
 
   function getPlacementLabel(
-    value
+    placement
   ) {
     return (
       PLACEMENT_OPTIONS.find(
         (item) =>
-          item.value === value
+          item.value === placement
       )?.label ||
-      value ||
+      placement ||
       "All eligible placements"
     )
   }
 
-  function getCountryLabel(
-    value
+  function getArticleTitle(
+    articleId
   ) {
+    if (!articleId) {
+      return null
+    }
+
     return (
-      COUNTRY_OPTIONS.find(
-        (item) =>
-          item.value === value
-      )?.label ||
-      value
+      articles.find(
+        (article) =>
+          article.id === articleId
+      )?.title || null
+    )
+  }
+
+  function getCategoryName(
+    categoryId
+  ) {
+    if (!categoryId) {
+      return null
+    }
+
+    return (
+      categories.find(
+        (category) =>
+          category.id === categoryId
+      )?.name || null
     )
   }
 
@@ -888,11 +886,10 @@ export default function AdvertisingPage() {
           minHeight: "60vh",
           display: "grid",
           placeItems: "center",
+          padding: "40px 20px",
         }}
       >
-        <p>
-          Loading Advertising…
-        </p>
+        <p>Loading Advertising…</p>
       </main>
     )
   }
@@ -910,7 +907,7 @@ export default function AdvertisingPage() {
 
             <p className="muted">
               Signed in as{" "}
-              {admin?.email}
+              {admin?.email || "Admin"}
             </p>
           </div>
 
@@ -918,6 +915,7 @@ export default function AdvertisingPage() {
             type="button"
             className="btn"
             onClick={closeEditor}
+            disabled={saving}
           >
             Back
           </button>
@@ -981,6 +979,7 @@ export default function AdvertisingPage() {
                 )
               }
               placeholder="Advertisement title"
+              disabled={saving}
             />
 
             <label
@@ -1003,7 +1002,8 @@ export default function AdvertisingPage() {
                   event.target.value
                 )
               }
-              placeholder="Company or advertiser name"
+              placeholder="Business or advertiser name"
+              disabled={saving}
             />
 
             <label
@@ -1017,7 +1017,6 @@ export default function AdvertisingPage() {
 
             <textarea
               className="input"
-              rows="5"
               value={
                 form.description
               }
@@ -1027,7 +1026,9 @@ export default function AdvertisingPage() {
                   event.target.value
                 )
               }
-              placeholder="Optional advertisement description"
+              placeholder="Short description of the advertisement"
+              rows={4}
+              disabled={saving}
             />
 
             <label
@@ -1041,9 +1042,7 @@ export default function AdvertisingPage() {
 
             <input
               className="input"
-              value={
-                form.image_url
-              }
+              value={form.image_url}
               onChange={(event) =>
                 updateField(
                   "image_url",
@@ -1051,6 +1050,7 @@ export default function AdvertisingPage() {
                 )
               }
               placeholder="https://example.com/banner.jpg"
+              disabled={saving}
             />
 
             {form.image_url && (
@@ -1061,12 +1061,11 @@ export default function AdvertisingPage() {
                     "1px solid #e5e5e5",
                   borderRadius: "12px",
                   overflow: "hidden",
+                  background: "#f7f7f7",
                 }}
               >
                 <img
-                  src={
-                    form.image_url
-                  }
+                  src={form.image_url}
                   alt={
                     form.alt_text ||
                     form.title ||
@@ -1078,9 +1077,7 @@ export default function AdvertisingPage() {
                     objectFit: "cover",
                     display: "block",
                   }}
-                  onError={(
-                    event
-                  ) => {
+                  onError={(event) => {
                     event.currentTarget.style.display =
                       "none"
                   }}
@@ -1097,6 +1094,280 @@ export default function AdvertisingPage() {
               Destination URL
             </label>
 
+            <input
+              className="input"
+              value={form.target_url}
+              onChange={(event) =>
+                updateField(
+                  "target_url",
+                  event.target.value
+                )
+              }
+              placeholder="https://example.com"
+              disabled={saving}
+            />
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Alt Text
+            </label>
+
+            <input
+              className="input"
+              value={form.alt_text}
+              onChange={(event) =>
+                updateField(
+                  "alt_text",
+                  event.target.value
+                )
+              }
+              placeholder="Describe the advertisement image"
+              disabled={saving}
+            />
+
+            <h2
+              className="h2"
+              style={{
+                marginTop: "30px",
+              }}
+            >
+              Placement
+            </h2>
+
+            <label
+              style={{
+                display: "block",
+                marginTop: "16px",
+              }}
+            >
+              Where should this advertisement
+              appear?
+            </label>
+
+            <select
+              className="input"
+              value={form.placement}
+              onChange={(event) =>
+                updateField(
+                  "placement",
+                  event.target.value
+                )
+              }
+              disabled={saving}
+            >
+              {PLACEMENT_OPTIONS.map(
+                (option) => (
+                  <option
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </option>
+                )
+              )}
+            </select>
+
+            <h2
+              className="h2"
+              style={{
+                marginTop: "30px",
+              }}
+            >
+              Target Article
+            </h2>
+
+            <p
+              className="muted"
+              style={{
+                marginTop: "6px",
+              }}
+            >
+              Optionally select one article
+              where this advertisement can
+              appear.
+            </p>
+
+            {articles.length === 0 ? (
+              <p
+                className="muted"
+                style={{
+                  marginTop: "12px",
+                }}
+              >
+                No articles available.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "grid",
+                  gap: "8px",
+                  marginTop: "12px",
+                  maxHeight: "260px",
+                  overflowY: "auto",
+                }}
+              >
+                {articles.map(
+                  (article) => {
+                    const selected =
+                      form.article_id ===
+                      article.id
+
+                    return (
+                      <button
+                        key={article.id}
+                        type="button"
+                        disabled={saving}
+                        onClick={() =>
+                          toggleArticle(
+                            article.id
+                          )
+                        }
+                        style={{
+                          textAlign: "left",
+                          border: selected
+                            ? "2px solid #111"
+                            : "1px solid #ddd",
+                          borderRadius:
+                            "10px",
+                          padding: "12px",
+                          background:
+                            selected
+                              ? "#f5f5f5"
+                              : "#fff",
+                          cursor: saving
+                            ? "not-allowed"
+                            : "pointer",
+                        }}
+                      >
+                        <strong>
+                          {article.title ||
+                            "Untitled article"}
+                        </strong>
+
+                        {article.slug && (
+                          <div
+                            className="muted"
+                            style={{
+                              marginTop: "4px",
+                              fontSize:
+                                "13px",
+                            }}
+                          >
+                            /{article.slug}
+                          </div>
+                        )}
+                      </button>
+                    )
+                  }
+                )}
+              </div>
+            )}
+
+            <h2
+              className="h2"
+              style={{
+                marginTop: "30px",
+              }}
+            >
+              Target Category
+            </h2>
+
+            <p
+              className="muted"
+              style={{
+                marginTop: "6px",
+              }}
+            >
+              Optionally select one category
+              where this advertisement can
+              appear.
+            </p>
+
+            {categories.length === 0 ? (
+              <p
+                className="muted"
+                style={{
+                  marginTop: "12px",
+                }}
+              >
+                No categories available.
+              </p>
+            ) : (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "8px",
+                  marginTop: "12px",
+                }}
+              >
+                {categories.map(
+                  (category) => {
+                    const selected =
+                      form.category_id ===
+                      category.id
+
+                    return (
+                      <button
+                        key={category.id}
+                        type="button"
+                        disabled={saving}
+                        onClick={() =>
+                          toggleCategory(
+                            category.id
+                          )
+                        }
+                        style={{
+                          border: selected
+                            ? "2px solid #111"
+                            : "1px solid #ddd",
+                          borderRadius:
+                            "999px",
+                          padding:
+                            "8px 12px",
+                          background:
+                            selected
+                              ? "#111"
+                              : "#fff",
+                          color: selected
+                            ? "#fff"
+                            : "#111",
+                          cursor: saving
+                            ? "not-allowed"
+                            : "pointer",
+                        }}
+                      >
+                        {category.name ||
+                          "Unnamed category"}
+                      </button>
+                    )
+                  }
+                )}
+              </div>
+            )}
+
+            {(form.article_id ||
+              form.category_id) && (
+              <button
+                type="button"
+                className="btn"
+                style={{
+                  marginTop: "14px",
+                }}
+                onClick={
+                  clearTargeting
+                }
+                disabled={saving}
+              >
+                Clear Article/Category
+                Targeting
+              </button>
+            )}
+          </section>
             <input
               className="input"
               value={
@@ -1295,6 +1566,7 @@ export default function AdvertisingPage() {
                 )
               )}
             </select>
+
             <h2
               className="h2"
               style={{
@@ -1352,8 +1624,7 @@ export default function AdvertisingPage() {
                             : "1px solid #ddd",
                         borderRadius:
                           "999px",
-                        padding:
-                          "8px 12px",
+                        padding: "8px 12px",
                         background:
                           selected
                             ? "#111"
@@ -1567,13 +1838,10 @@ export default function AdvertisingPage() {
                   disabled={
                     !isSuperAdmin
                   }
-                  onChange={(
-                    event
-                  ) =>
+                  onChange={(event) =>
                     updateField(
                       "active",
-                      event.target
-                        .checked
+                      event.target.checked
                     )
                   }
                 />
@@ -1694,7 +1962,6 @@ export default function AdvertisingPage() {
                   : "All categories"}
               </strong>
             </div>
-
             <div
               style={{
                 marginTop: "18px",
@@ -1708,16 +1975,12 @@ export default function AdvertisingPage() {
                 {form.countries.length
                   ? form.countries
                       .map(
-                        (
-                          code
-                        ) =>
+                        (code) =>
                           getCountryLabel(
                             code
                           )
                       )
-                      .join(
-                        ", "
-                      )
+                      .join(", ")
                   : "All countries"}
               </strong>
             </div>
@@ -1735,21 +1998,15 @@ export default function AdvertisingPage() {
                 {form.devices.length
                   ? form.devices
                       .map(
-                        (
-                          value
-                        ) =>
+                        (device) =>
                           DEVICE_OPTIONS.find(
-                            (
+                            (item) =>
+                              item.value ===
                               device
-                            ) =>
-                              device.value ===
-                              value
                           )?.label ||
-                          value
+                          device
                       )
-                      .join(
-                        ", "
-                      )
+                      .join(", ")
                   : "No devices selected"}
               </strong>
             </div>
@@ -1760,70 +2017,15 @@ export default function AdvertisingPage() {
               }}
             >
               <p className="muted">
-                Schedule
+                Status
               </p>
 
               <strong>
-                {form.start_at ||
-                form.end_at
-                  ? `${formatDate(
-                      form.start_at
-                    )} → ${formatDate(
-                      form.end_at
-                    )}`
-                  : "Always available"}
+                {form.active
+                  ? "ACTIVE"
+                  : "INACTIVE"}
               </strong>
             </div>
-
-            {form.image_url && (
-              <div
-                style={{
-                  marginTop: "22px",
-                }}
-              >
-                <p className="muted">
-                  Preview
-                </p>
-
-                <div
-                  style={{
-                    marginTop: "8px",
-                    border:
-                      "1px solid #e5e5e5",
-                    borderRadius:
-                      "12px",
-                    overflow:
-                      "hidden",
-                  }}
-                >
-                  <img
-                    src={
-                      form.image_url
-                    }
-                    alt={
-                      form.alt_text ||
-                      form.title ||
-                      "Advertisement preview"
-                    }
-                    style={{
-                      width: "100%",
-                      display:
-                        "block",
-                      maxHeight:
-                        "220px",
-                      objectFit:
-                        "cover",
-                    }}
-                    onError={(
-                      event
-                    ) => {
-                      event.currentTarget.style.display =
-                        "none"
-                    }}
-                  />
-                </div>
-              </div>
-            )}
           </aside>
         </div>
       </main>
@@ -1885,183 +2087,54 @@ export default function AdvertisingPage() {
           marginTop: "18px",
         }}
       >
-        <div
-          className="card"
-          style={{
-            gridColumn:
-              "span 3",
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(4, minmax(0, 1fr))",
-              gap: "12px",
-            }}
-          >
-            <div>
-              <p className="muted">
-                Advertisements
-              </p>
-
-              <strong
-                style={{
-                  fontSize:
-                    "24px",
-                }}
-              >
-                {ads.length}
-              </strong>
-            </div>
-
-            <div>
-              <p className="muted">
-                Active
-              </p>
-
-              <strong
-                style={{
-                  fontSize:
-                    "24px",
-                }}
-              >
-                {activeAds}
-              </strong>
-            </div>
-
-            <div>
-              <p className="muted">
-                Views
-              </p>
-
-              <strong
-                style={{
-                  fontSize:
-                    "24px",
-                }}
-              >
-                {totalViews.toLocaleString()}
-              </strong>
-            </div>
-
-            <div>
-              <p className="muted">
-                Clicks / CTR
-              </p>
-
-              <strong
-                style={{
-                  fontSize:
-                    "24px",
-                }}
-              >
-                {totalClicks.toLocaleString()}
-              </strong>
-
-              <span className="muted">
-                {" "}
-                / {totalCtr}%
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
-return (
-    <main>
-      <div className="row spread">
-        <div>
-          <h1 className="h1">
-            Advertising
-          </h1>
-
-          <p className="muted">
-            Create and manage advertisements
-            that appear across THE INDEX.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          className="btn primary"
-          onClick={openNewAd}
-        >
-          New Advertisement
-        </button>
-      </div>
-
-      {message && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-          }}
-        >
-          {message}
-        </div>
-      )}
-
-      {error && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-            color: "#b00020",
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      <div
-        className="grid grid4"
-        style={{
-          marginTop: "18px",
-        }}
-      >
-        <div className="card">
-          <p className="muted">
-            Advertisements
-          </p>
-
-          <h2 className="h2">
-            {ads.length}
-          </h2>
-        </div>
-
         <div className="card">
           <p className="muted">
             Active Ads
           </p>
 
-          <h2 className="h2">
+          <h2
+            className="h1"
+            style={{
+              marginTop: "6px",
+            }}
+          >
             {activeAds}
           </h2>
         </div>
 
         <div className="card">
           <p className="muted">
-            Views
+            Total Views
           </p>
 
-          <h2 className="h2">
+          <h2
+            className="h1"
+            style={{
+              marginTop: "6px",
+            }}
+          >
             {totalViews.toLocaleString()}
           </h2>
         </div>
 
         <div className="card">
           <p className="muted">
-            Clicks
+            Total Clicks
           </p>
 
-          <h2 className="h2">
+          <h2
+            className="h1"
+            style={{
+              marginTop: "6px",
+            }}
+          >
             {totalClicks.toLocaleString()}
           </h2>
 
           <p
             className="muted"
             style={{
-              marginTop: "4px",
+              marginTop: "5px",
             }}
           >
             CTR: {ctr}%
@@ -2069,102 +2142,157 @@ return (
         </div>
       </div>
 
-      <div
+      <section
         className="card"
         style={{
           marginTop: "18px",
         }}
       >
-        {ads.length === 0 ? (
+        <div className="row spread">
           <div>
             <h2 className="h2">
-              No advertisements yet
+              Advertisements
             </h2>
 
-            <p className="muted">
-              Create your first advertisement
-              using the button above.
+            <p
+              className="muted"
+              style={{
+                marginTop: "5px",
+              }}
+            >
+              Manage your banners,
+              targeting, schedules and
+              performance.
             </p>
+          </div>
+
+          <button
+            type="button"
+            className="btn"
+            onClick={loadData}
+          >
+            Refresh
+          </button>
+        </div>
+
+        {ads.length === 0 ? (
+          <div
+            style={{
+              padding: "36px 10px",
+              textAlign: "center",
+            }}
+          >
+            <h3 className="h2">
+              No advertisements yet
+            </h3>
+
+            <p
+              className="muted"
+              style={{
+                marginTop: "7px",
+              }}
+            >
+              Create your first
+              advertisement to display
+              banners on the public
+              application.
+            </p>
+
+            <button
+              type="button"
+              className="btn primary"
+              style={{
+                marginTop: "18px",
+              }}
+              onClick={
+                openNewCampaign
+              }
+            >
+              Create Advertisement
+            </button>
           </div>
         ) : (
           <div
             style={{
               display: "grid",
               gap: "14px",
+              marginTop: "18px",
             }}
           >
             {ads.map((ad) => {
               const validId =
                 isValidId(ad?.id)
 
-              const article =
-                articles.find(
-                  (item) =>
-                    item.id ===
-                    ad.article_id
+              const views =
+                Number(
+                  ad?.views || 0
                 )
 
-              const category =
-                categories.find(
-                  (item) =>
-                    item.id ===
-                    ad.category_id
+              const clicks =
+                Number(
+                  ad?.clicks || 0
                 )
+
+              const adCtr =
+                views > 0
+                  ? (
+                      (clicks /
+                        views) *
+                      100
+                    ).toFixed(2)
+                  : "0.00"
 
               return (
                 <article
                   key={
                     validId
                       ? ad.id
-                      : `${ad.title || "ad"}-${ad.target_url || ""}`
+                      : `${ad?.title || "ad"}-${ad?.created_at || Math.random()}`
                   }
                   style={{
                     border:
                       "1px solid #e5e5e5",
-                    borderRadius: "14px",
+                    borderRadius:
+                      "14px",
                     padding: "16px",
                   }}
                 >
-                  <div className="row spread">
+                  <div
+                    className="row spread"
+                    style={{
+                      alignItems:
+                        "flex-start",
+                    }}
+                  >
                     <div
                       style={{
                         minWidth: 0,
                         flex: 1,
                       }}
                     >
-                      <h2
-                        className="h2"
-                        style={{
-                          margin: 0,
-                        }}
-                      >
+                      <h3 className="h2">
                         {ad.title ||
                           "Untitled advertisement"}
-                      </h2>
+                      </h3>
 
-                      <div
+                      <p
                         className="muted"
                         style={{
-                          marginTop: "7px",
-                          fontSize: "13px",
+                          marginTop: "6px",
                         }}
                       >
-                        Placement:{" "}
-                        {placementOptions.find(
-                          (item) =>
-                            item.value ===
-                            ad.placement
-                        )?.label ||
-                          ad.placement ||
-                          "All placements"}
-                      </div>
+                        {ad.target_url ||
+                          "No destination URL"}
+                      </p>
 
                       <div
                         style={{
                           display: "flex",
-                          flexWrap: "wrap",
-                          gap: "6px",
-                          marginTop: "10px",
+                          flexWrap:
+                            "wrap",
+                          gap: "7px",
+                          marginTop:
+                            "10px",
                         }}
                       >
                         <span
@@ -2174,14 +2302,33 @@ return (
                             borderRadius:
                               "999px",
                             padding:
-                              "4px 9px",
+                              "5px 9px",
                             fontSize:
                               "12px",
+                            fontWeight:
+                              600,
                           }}
                         >
                           {ad.active
                             ? "ACTIVE"
                             : "INACTIVE"}
+                        </span>
+
+                        <span
+                          style={{
+                            border:
+                              "1px solid #ddd",
+                            borderRadius:
+                              "999px",
+                            padding:
+                              "5px 9px",
+                            fontSize:
+                              "12px",
+                          }}
+                        >
+                          {getPlacementLabel(
+                            ad.placement
+                          )}
                         </span>
 
                         {ad.article_id && (
@@ -2192,14 +2339,12 @@ return (
                               borderRadius:
                                 "999px",
                               padding:
-                                "4px 9px",
+                                "5px 9px",
                               fontSize:
                                 "12px",
                             }}
                           >
-                            ARTICLE:{" "}
-                            {article?.title ||
-                              "Selected"}
+                            ARTICLE TARGETED
                           </span>
                         )}
 
@@ -2211,22 +2356,20 @@ return (
                               borderRadius:
                                 "999px",
                               padding:
-                                "4px 9px",
+                                "5px 9px",
                               fontSize:
                                 "12px",
                             }}
                           >
-                            CATEGORY:{" "}
-                            {category?.name ||
-                              category?.title ||
-                              "Selected"}
+                            CATEGORY TARGETED
                           </span>
                         )}
 
                         {Array.isArray(
                           ad.countries
                         ) &&
-                          ad.countries.length >
+                          ad.countries
+                            .length >
                             0 && (
                             <span
                               style={{
@@ -2235,23 +2378,25 @@ return (
                                 borderRadius:
                                   "999px",
                                 padding:
-                                  "4px 9px",
+                                  "5px 9px",
                                 fontSize:
                                   "12px",
                               }}
                             >
-                              {ad.countries.length}{" "}
-                              {ad.countries.length ===
-                              1
-                                ? "COUNTRY"
-                                : "COUNTRIES"}
+                              {
+                                ad
+                                  .countries
+                                  .length
+                              }{" "}
+                              countries
                             </span>
                           )}
 
                         {Array.isArray(
                           ad.devices
                         ) &&
-                          ad.devices.length >
+                          ad.devices
+                            .length >
                             0 && (
                             <span
                               style={{
@@ -2260,16 +2405,17 @@ return (
                                 borderRadius:
                                   "999px",
                                 padding:
-                                  "4px 9px",
+                                  "5px 9px",
                                 fontSize:
                                   "12px",
                               }}
                             >
-                              {ad.devices.length}{" "}
-                              {ad.devices.length ===
-                              1
-                                ? "DEVICE"
-                                : "DEVICES"}
+                              {
+                                ad
+                                  .devices
+                                  .length
+                              }{" "}
+                              devices
                             </span>
                           )}
                       </div>
@@ -2277,85 +2423,105 @@ return (
                       <div
                         style={{
                           display: "flex",
-                          gap: "18px",
-                          flexWrap: "wrap",
-                          marginTop: "12px",
+                          flexWrap:
+                            "wrap",
+                          gap: "20px",
+                          marginTop:
+                            "14px",
                         }}
                       >
-                        <span className="muted">
-                          Views:{" "}
-                          <strong>
-                            {Number(
-                              ad.views || 0
-                            ).toLocaleString()}
-                          </strong>
-                        </span>
+                        <div>
+                          <span className="muted">
+                            Views
+                          </span>
 
-                        <span className="muted">
-                          Clicks:{" "}
-                          <strong>
-                            {Number(
-                              ad.clicks || 0
-                            ).toLocaleString()}
+                          <strong
+                            style={{
+                              display:
+                                "block",
+                              marginTop:
+                                "3px",
+                            }}
+                          >
+                            {views.toLocaleString()}
                           </strong>
-                        </span>
+                        </div>
 
-                        <span className="muted">
-                          CTR:{" "}
-                          <strong>
-                            {Number(
-                              ad.views || 0
-                            ) > 0
-                              ? (
-                                  (Number(
-                                    ad.clicks ||
-                                      0
-                                  ) /
-                                    Number(
-                                      ad.views ||
-                                        0
-                                    )) *
-                                  100
-                                ).toFixed(2)
-                              : "0.00"}
-                            %
+                        <div>
+                          <span className="muted">
+                            Clicks
+                          </span>
+
+                          <strong
+                            style={{
+                              display:
+                                "block",
+                              marginTop:
+                                "3px",
+                            }}
+                          >
+                            {clicks.toLocaleString()}
                           </strong>
-                        </span>
+                        </div>
 
-                        <span className="muted">
-                          Start:{" "}
-                          <strong>
+                        <div>
+                          <span className="muted">
+                            CTR
+                          </span>
+
+                          <strong
+                            style={{
+                              display:
+                                "block",
+                              marginTop:
+                                "3px",
+                            }}
+                          >
+                            {adCtr}%
+                          </strong>
+                        </div>
+
+                        <div>
+                          <span className="muted">
+                            Created
+                          </span>
+
+                          <strong
+                            style={{
+                              display:
+                                "block",
+                              marginTop:
+                                "3px",
+                              fontSize:
+                                "13px",
+                            }}
+                          >
                             {formatDate(
-                              ad.start_at
+                              ad.created_at
                             )}
                           </strong>
-                        </span>
-
-                        <span className="muted">
-                          End:{" "}
-                          <strong>
-                            {formatDate(
-                              ad.end_at
-                            )}
-                          </strong>
-                        </span>
+                        </div>
                       </div>
                     </div>
 
                     <div
                       style={{
                         display: "flex",
+                        flexWrap:
+                          "wrap",
                         gap: "8px",
-                        flexWrap: "wrap",
                         justifyContent:
                           "flex-end",
-                        marginLeft: "16px",
+                        marginLeft:
+                          "16px",
                       }}
                     >
                       <button
                         type="button"
                         className="btn"
-                        disabled={!validId}
+                        disabled={
+                          !validId
+                        }
                         onClick={() =>
                           editAd(ad)
                         }
@@ -2366,7 +2532,10 @@ return (
                       <button
                         type="button"
                         className="btn"
-                        disabled={!validId}
+                        disabled={
+                          !validId ||
+                          !isSuperAdmin
+                        }
                         onClick={() =>
                           toggleAd(ad)
                         }
@@ -2379,9 +2548,14 @@ return (
                       <button
                         type="button"
                         className="btn"
-                        disabled={!validId}
+                        disabled={
+                          !validId ||
+                          !isSuperAdmin
+                        }
                         onClick={() =>
-                          deleteAd(ad.id)
+                          deleteAd(
+                            ad.id
+                          )
                         }
                       >
                         Delete
@@ -2392,50 +2566,68 @@ return (
                   {ad.image_url && (
                     <div
                       style={{
-                        marginTop: "14px",
-                        borderRadius: "12px",
-                        overflow: "hidden",
+                        marginTop:
+                          "15px",
+                        borderRadius:
+                          "12px",
+                        overflow:
+                          "hidden",
                         border:
                           "1px solid #e5e5e5",
                       }}
                     >
                       <img
-                        src={ad.image_url}
+                        src={
+                          ad.image_url
+                        }
                         alt={
                           ad.alt_text ||
                           ad.title ||
                           "Advertisement"
                         }
                         style={{
-                          width: "100%",
-                          maxHeight: "220px",
-                          objectFit: "cover",
-                          display: "block",
+                          display:
+                            "block",
+                          width:
+                            "100%",
+                          maxHeight:
+                            "240px",
+                          objectFit:
+                            "cover",
+                        }}
+                        onError={(
+                          event
+                        ) => {
+                          event.currentTarget.style.display =
+                            "none"
                         }}
                       />
                     </div>
                   )}
 
-                  {ad.target_url && (
-                    <p
-                      className="muted"
-                      style={{
-                        marginTop: "10px",
-                        fontSize: "13px",
-                        wordBreak:
-                          "break-all",
-                      }}
-                    >
-                      Destination:{" "}
-                      {ad.target_url}
-                    </p>
-                  )}
+                  <div
+                    className="muted"
+                    style={{
+                      marginTop:
+                        "12px",
+                      fontSize:
+                        "13px",
+                    }}
+                  >
+                    {ad.start_at
+                      ? `Starts: ${formatDate(ad.start_at)}`
+                      : "No start date"}
+                    {" · "}
+                    {ad.end_at
+                      ? `Ends: ${formatDate(ad.end_at)}`
+                      : "No end date"}
+                  </div>
                 </article>
               )
             })}
           </div>
         )}
-      </div>
+      </section>
     </main>
   )
 }
