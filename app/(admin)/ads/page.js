@@ -42,7 +42,8 @@ const DEVICE_OPTIONS = [
 ]
 
 const PLACEMENT_OPTIONS = [
-  { value: "between_articles", label: "Between Articles" },
+  { value: "between_articles", label: "Between Articles (Homepage list)" },
+  { value: "in_content", label: "In Content (Inside Article)" },
   { value: "article_top", label: "Top of Article" },
   { value: "article_bottom", label: "Bottom of Article" },
   { value: "category_top", label: "Top of Category" },
@@ -369,7 +370,6 @@ async function loadAdmin() {
         )
       }
 
-      // IMPORTANT: map form.title → database column "name"
       const payload = {
         name: title,
         description: form.description.trim() || null,
@@ -388,11 +388,6 @@ async function loadAdmin() {
         active: isSuperAdmin ? Boolean(form.active) : false,
         updated_at: new Date().toISOString(),
       }
-
-      // Only include advertiser_name if you have already added the column
-      // Uncomment the next line after running:
-      // ALTER TABLE ads ADD COLUMN IF NOT EXISTS advertiser_name text;
-      // payload.advertiser_name = form.advertiser_name.trim() || null
 
       let saved = null
 
