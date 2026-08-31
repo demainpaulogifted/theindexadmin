@@ -13,21 +13,26 @@ const DEFAULT_SETTINGS = {
   logo_url: "",
   favicon_url: "",
   social_image_url: "",
+
+  google_search_console_verification: "",
+  google_adsense_publisher_id: "",
+  google_analytics_id: "",
+  google_tag_manager_id: "",
+  bing_webmaster_verification: "",
+  facebook_domain_verification: "",
+  pinterest_verification: "",
+  ads_txt: "",
+  robots_txt: "",
 }
 
 export default function SettingsPage() {
   const [admin, setAdmin] = useState(null)
   const [settingsId, setSettingsId] = useState(null)
-
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-
   const [message, setMessage] = useState("")
   const [error, setError] = useState("")
-
-  const [form, setForm] = useState(
-    DEFAULT_SETTINGS
-  )
+  const [form, setForm] = useState(DEFAULT_SETTINGS)
 
   useEffect(() => {
     loadSettings()
@@ -56,9 +61,7 @@ export default function SettingsPage() {
         error: adminError,
       } = await supabase
         .from("admin_users")
-        .select(
-          "id,user_id,role,active"
-        )
+        .select("id,user_id,role,active")
         .eq("user_id", user.id)
         .eq("active", true)
         .maybeSingle()
@@ -77,10 +80,7 @@ export default function SettingsPage() {
 
       setAdmin(currentAdmin)
 
-      if (
-        currentAdmin.role !==
-        "SUPER_ADMIN"
-      ) {
+      if (currentAdmin.role !== "SUPER_ADMIN") {
         throw new Error(
           "Only a SUPER_ADMIN can manage Settings."
         )
@@ -91,9 +91,7 @@ export default function SettingsPage() {
         error: settingsError,
       } = await supabase
         .from("site_settings")
-        .select(
-          "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
-        )
+        .select("*")
         .limit(1)
 
       if (settingsError) {
@@ -102,48 +100,59 @@ export default function SettingsPage() {
         )
       }
 
-      const data =
-        settingsRows?.[0] || null
+      const data = settingsRows?.[0] || null
 
       if (data) {
         setSettingsId(data.id)
 
         setForm({
-          site_name:
-            data.site_name ??
-            DEFAULT_SETTINGS.site_name,
-
-          tagline:
-            data.tagline ??
-            DEFAULT_SETTINGS.tagline,
+          ...DEFAULT_SETTINGS,
+          ...data,
 
           blog_description:
-            data.blog_description ??
-            DEFAULT_SETTINGS.blog_description,
+            data.blog_description ?? "",
 
           meta_description:
-            data.meta_description ??
-            DEFAULT_SETTINGS.meta_description,
+            data.meta_description ?? "",
 
           default_seo_title:
-            data.default_seo_title ??
-            DEFAULT_SETTINGS.default_seo_title,
-
-          site_url:
-            data.site_url ??
-            DEFAULT_SETTINGS.site_url,
+            data.default_seo_title ?? "",
 
           logo_url:
-            data.logo_url ??
-            DEFAULT_SETTINGS.logo_url,
+            data.logo_url ?? "",
 
           favicon_url:
-            data.favicon_url ??
-            DEFAULT_SETTINGS.favicon_url,
+            data.favicon_url ?? "",
 
           social_image_url:
-            data.social_image_url ??
-            DEFAULT_SETTINGS.social_image_url,
+            data.social_image_url ?? "",
+
+          google_search_console_verification:
+            data.google_search_console_verification ?? "",
+
+          google_adsense_publisher_id:
+            data.google_adsense_publisher_id ?? "",
+
+          google_analytics_id:
+            data.google_analytics_id ?? "",
+
+          google_tag_manager_id:
+            data.google_tag_manager_id ?? "",
+
+          bing_webmaster_verification:
+            data.bing_webmaster_verification ?? "",
+
+          facebook_domain_verification:
+            data.facebook_domain_verification ?? "",
+
+          pinterest_verification:
+            data.pinterest_verification ?? "",
+
+          ads_txt:
+            data.ads_txt ?? "",
+
+          robots_txt:
+            data.robots_txt ?? "",
         })
       } else {
         setSettingsId(null)
@@ -179,10 +188,7 @@ export default function SettingsPage() {
       return
     }
 
-    if (
-      admin.role !==
-      "SUPER_ADMIN"
-    ) {
+    if (admin.role !== "SUPER_ADMIN") {
       setError(
         "Only a SUPER_ADMIN can manage Settings."
       )
@@ -232,122 +238,131 @@ export default function SettingsPage() {
         social_image_url:
           form.social_image_url.trim() ||
           null,
+
+        google_search_console_verification:
+          form.google_search_console_verification.trim() ||
+          null,
+
+        google_adsense_publisher_id:
+          form.google_adsense_publisher_id.trim() ||
+          null,
+
+        google_analytics_id:
+          form.google_analytics_id.trim() ||
+          null,
+
+        google_tag_manager_id:
+          form.google_tag_manager_id.trim() ||
+          null,
+
+        bing_webmaster_verification:
+          form.bing_webmaster_verification.trim() ||
+          null,
+
+        facebook_domain_verification:
+          form.facebook_domain_verification.trim() ||
+          null,
+
+        pinterest_verification:
+          form.pinterest_verification.trim() ||
+          null,
+
+        ads_txt:
+          form.ads_txt.trim() ||
+          null,
+
+        robots_txt:
+          form.robots_txt.trim() ||
+          null,
       }
 
       let savedId = settingsId
+      let data
 
       if (savedId) {
-        const {
-          data,
-          error: updateError,
-        } = await supabase
+        const result = await supabase
           .from("site_settings")
           .update(payload)
           .eq("id", savedId)
-          .select(
-            "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
-          )
+          .select("*")
           .single()
 
-        if (updateError) {
+        if (result.error) {
           throw new Error(
-            `Could not save Settings: ${updateError.message}`
+            `Could not save Settings: ${result.error.message}`
           )
         }
 
-        savedId = data.id
-
-        setForm({
-          site_name:
-            data.site_name ??
-            DEFAULT_SETTINGS.site_name,
-
-          tagline:
-            data.tagline ??
-            DEFAULT_SETTINGS.tagline,
-
-          blog_description:
-            data.blog_description ??
-            "",
-
-          meta_description:
-            data.meta_description ??
-            "",
-
-          default_seo_title:
-            data.default_seo_title ??
-            "",
-
-          site_url:
-            data.site_url ??
-            DEFAULT_SETTINGS.site_url,
-
-          logo_url:
-            data.logo_url ?? "",
-
-          favicon_url:
-            data.favicon_url ?? "",
-
-          social_image_url:
-            data.social_image_url ?? "",
-        })
+        data = result.data
       } else {
-        const {
-          data,
-          error: insertError,
-        } = await supabase
+        const result = await supabase
           .from("site_settings")
           .insert(payload)
-          .select(
-            "id,site_name,tagline,blog_description,meta_description,default_seo_title,site_url,logo_url,favicon_url,social_image_url"
-          )
+          .select("*")
           .single()
 
-        if (insertError) {
+        if (result.error) {
           throw new Error(
-            `Could not create Settings: ${insertError.message}`
+            `Could not create Settings: ${result.error.message}`
           )
         }
 
-        savedId = data.id
-
-        setForm({
-          site_name:
-            data.site_name ??
-            DEFAULT_SETTINGS.site_name,
-
-          tagline:
-            data.tagline ??
-            DEFAULT_SETTINGS.tagline,
-
-          blog_description:
-            data.blog_description ??
-            "",
-
-          meta_description:
-            data.meta_description ??
-            "",
-
-          default_seo_title:
-            data.default_seo_title ??
-            "",
-
-          site_url:
-            data.site_url ??
-            DEFAULT_SETTINGS.site_url,
-
-          logo_url:
-            data.logo_url ?? "",
-
-          favicon_url:
-            data.favicon_url ?? "",
-
-          social_image_url:
-            data.social_image_url ?? "",
-        })
+        data = result.data
       }
 
+      savedId = data.id
+
       setSettingsId(savedId)
+
+      setForm({
+        ...DEFAULT_SETTINGS,
+        ...data,
+
+        blog_description:
+          data.blog_description ?? "",
+
+        meta_description:
+          data.meta_description ?? "",
+
+        default_seo_title:
+          data.default_seo_title ?? "",
+
+        logo_url:
+          data.logo_url ?? "",
+
+        favicon_url:
+          data.favicon_url ?? "",
+
+        social_image_url:
+          data.social_image_url ?? "",
+
+        google_search_console_verification:
+          data.google_search_console_verification ?? "",
+
+        google_adsense_publisher_id:
+          data.google_adsense_publisher_id ?? "",
+
+        google_analytics_id:
+          data.google_analytics_id ?? "",
+
+        google_tag_manager_id:
+          data.google_tag_manager_id ?? "",
+
+        bing_webmaster_verification:
+          data.bing_webmaster_verification ?? "",
+
+        facebook_domain_verification:
+          data.facebook_domain_verification ?? "",
+
+        pinterest_verification:
+          data.pinterest_verification ?? "",
+
+        ads_txt:
+          data.ads_txt ?? "",
+
+        robots_txt:
+          data.robots_txt ?? "",
+      })
 
       setMessage(
         "Settings saved successfully."
@@ -410,18 +425,15 @@ export default function SettingsPage() {
         padding: "24px 16px 60px",
       }}
     >
-      <div
-        style={{
-          marginBottom: "24px",
-        }}
-      >
+      <div style={{ marginBottom: "24px" }}>
         <h1 className="h1">
           Settings
         </h1>
 
         <p className="muted">
           Manage THE INDEX website,
-          branding and SEO configuration.
+          branding, SEO and search
+          engine configuration.
         </p>
       </div>
 
@@ -459,9 +471,7 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>
-            Site Name
-          </strong>
+          <strong>Site Name</strong>
 
           <input
             className="input"
@@ -485,9 +495,7 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>
-            Tagline
-          </strong>
+          <strong>Tagline</strong>
 
           <input
             className="input"
@@ -517,9 +525,7 @@ export default function SettingsPage() {
 
           <textarea
             className="input"
-            value={
-              form.blog_description
-            }
+            value={form.blog_description}
             onChange={(event) =>
               updateField(
                 "blog_description",
@@ -593,9 +599,7 @@ export default function SettingsPage() {
 
           <input
             className="input"
-            value={
-              form.default_seo_title
-            }
+            value={form.default_seo_title}
             onChange={(event) =>
               updateField(
                 "default_seo_title",
@@ -621,9 +625,7 @@ export default function SettingsPage() {
 
           <textarea
             className="input"
-            value={
-              form.meta_description
-            }
+            value={form.meta_description}
             onChange={(event) =>
               updateField(
                 "meta_description",
@@ -638,8 +640,7 @@ export default function SettingsPage() {
           />
         </label>
       </section>
-
-      <section
+<section
         className="card"
         style={{
           marginTop: "20px",
@@ -655,9 +656,7 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>
-            Logo URL
-          </strong>
+          <strong>Logo URL</strong>
 
           <input
             className="input"
@@ -681,15 +680,11 @@ export default function SettingsPage() {
             marginTop: "16px",
           }}
         >
-          <strong>
-            Favicon URL
-          </strong>
+          <strong>Favicon URL</strong>
 
           <input
             className="input"
-            value={
-              form.favicon_url
-            }
+            value={form.favicon_url}
             onChange={(event) =>
               updateField(
                 "favicon_url",
@@ -715,9 +710,7 @@ export default function SettingsPage() {
 
           <input
             className="input"
-            value={
-              form.social_image_url
-            }
+            value={form.social_image_url}
             onChange={(event) =>
               updateField(
                 "social_image_url",
@@ -729,6 +722,334 @@ export default function SettingsPage() {
               marginTop: "8px",
             }}
           />
+        </label>
+      </section>
+
+      <section
+        className="card"
+        style={{
+          marginTop: "20px",
+        }}
+      >
+        <h2 className="h2">
+          Search Engines & Verification
+        </h2>
+
+        <p
+          className="muted"
+          style={{
+            marginTop: "8px",
+          }}
+        >
+          Add verification tokens supplied
+          by search engines and webmaster
+          platforms. Leave a field empty if
+          you are not using that service.
+        </p>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Google Search Console Verification
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.google_search_console_verification
+            }
+            onChange={(event) =>
+              updateField(
+                "google_search_console_verification",
+                event.target.value
+              )
+            }
+            placeholder="Google verification token"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Bing Webmaster Verification
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.bing_webmaster_verification
+            }
+            onChange={(event) =>
+              updateField(
+                "bing_webmaster_verification",
+                event.target.value
+              )
+            }
+            placeholder="Bing verification token"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Facebook / Meta Domain Verification
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.facebook_domain_verification
+            }
+            onChange={(event) =>
+              updateField(
+                "facebook_domain_verification",
+                event.target.value
+              )
+            }
+            placeholder="Meta verification token"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Pinterest Verification
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.pinterest_verification
+            }
+            onChange={(event) =>
+              updateField(
+                "pinterest_verification",
+                event.target.value
+              )
+            }
+            placeholder="Pinterest verification token"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+      </section>
+
+      <section
+        className="card"
+        style={{
+          marginTop: "20px",
+        }}
+      >
+        <h2 className="h2">
+          Analytics & Advertising
+        </h2>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Google Analytics Measurement ID
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.google_analytics_id
+            }
+            onChange={(event) =>
+              updateField(
+                "google_analytics_id",
+                event.target.value
+              )
+            }
+            placeholder="G-XXXXXXXXXX"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Google Tag Manager Container ID
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.google_tag_manager_id
+            }
+            onChange={(event) =>
+              updateField(
+                "google_tag_manager_id",
+                event.target.value
+              )
+            }
+            placeholder="GTM-XXXXXXX"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>
+            Google AdSense Publisher ID
+          </strong>
+
+          <input
+            className="input"
+            value={
+              form.google_adsense_publisher_id
+            }
+            onChange={(event) =>
+              updateField(
+                "google_adsense_publisher_id",
+                event.target.value
+              )
+            }
+            placeholder="ca-pub-1234567890123456"
+            style={{
+              width: "100%",
+              marginTop: "8px",
+            }}
+          />
+        </label>
+      </section>
+
+      <section
+        className="card"
+        style={{
+          marginTop: "20px",
+        }}
+      >
+        <h2 className="h2">
+          Crawlers & Advertising Files
+        </h2>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "16px",
+          }}
+        >
+          <strong>ads.txt</strong>
+
+          <textarea
+            className="input"
+            value={form.ads_txt}
+            onChange={(event) =>
+              updateField(
+                "ads_txt",
+                event.target.value
+              )
+            }
+            rows={8}
+            placeholder={
+              "google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0"
+            }
+            style={{
+              width: "100%",
+              marginTop: "8px",
+              fontFamily: "monospace",
+            }}
+          />
+
+          <small
+            style={{
+              display: "block",
+              marginTop: "6px",
+              opacity: 0.65,
+            }}
+          >
+            This content will be served from
+            the public /ads.txt endpoint.
+          </small>
+        </label>
+
+        <label
+          style={{
+            display: "block",
+            marginTop: "20px",
+          }}
+        >
+          <strong>robots.txt</strong>
+
+          <textarea
+            className="input"
+            value={form.robots_txt}
+            onChange={(event) =>
+              updateField(
+                "robots_txt",
+                event.target.value
+              )
+            }
+            rows={10}
+            placeholder={
+              "User-agent: *\nAllow: /\n\nSitemap: https://yourdomain.com/sitemap.xml"
+            }
+            style={{
+              width: "100%",
+              marginTop: "8px",
+              fontFamily: "monospace",
+            }}
+          />
+
+          <small
+            style={{
+              display: "block",
+              marginTop: "6px",
+              opacity: 0.65,
+            }}
+          >
+            This content will be served from
+            the public /robots.txt endpoint.
+          </small>
         </label>
       </section>
 
