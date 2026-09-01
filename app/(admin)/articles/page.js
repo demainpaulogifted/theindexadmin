@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { supabase } from "@/lib/supabase"
 import ArticleEditor from "@/components/ArticleEditor"
 
@@ -9,6 +10,7 @@ export default function ArticlesPage() {
   const [categories, setCategories] = useState([])
   const [categoryByPost, setCategoryByPost] = useState({})
   const [viewCounts, setViewCounts] = useState({})
+  const [likeCounts, setLikeCounts] = useState({})
   const [admin, setAdmin] = useState(null)
 
   const [editingArticle, setEditingArticle] = useState(null)
@@ -27,9 +29,7 @@ export default function ArticlesPage() {
     } = await supabase.auth.getUser()
 
     if (userError || !user) {
-      throw new Error(
-        userError?.message || "Authentication session missing."
-      )
+      throw new Error(userError?.message || "Authentication session missing.")
     }
 
     const { data, error: adminError } = await supabase
@@ -40,9 +40,7 @@ export default function ArticlesPage() {
       .maybeSingle()
 
     if (adminError) {
-      throw new Error(
-        `Admin authorization failed: ${adminError.message}`
-      )
+      throw new Error(`Admin authorization failed: ${adminError.message}`)
     }
 
     if (!data) {
@@ -55,7 +53,6 @@ export default function ArticlesPage() {
     }
 
     setAdmin(currentAdmin)
-
     return currentAdmin
   }
 
@@ -76,16 +73,33 @@ export default function ArticlesPage() {
     }
 
     const counts = {}
-
     for (const row of data || []) {
-      if (!counts[row.article_id]) {
-        counts[row.article_id] = 0
-      }
+      counts[row.article_id] = (counts[row.article_id] || 0) + 1
+    }
+    setViewCounts(counts)
+  }
 
-      counts[row.article_id] += 1
+  async function loadArticleLikes(articleIds) {
+    if (!articleIds.length) {
+      setLikeCounts({})
+      return
     }
 
-    setViewCounts(counts)
+    const { data, error: likesError } = await supabase
+      .from("article_likes")
+      .select("article_id")
+      .in("article_id", articleIds)
+
+    if (likesError) {
+      console.error("Could not load article likes:", likesError)
+      return
+    }
+
+    const counts = {}
+    for (const row of data || []) {
+      counts[row.article_id] = (counts[row.article_id] || 0) + 1
+    }
+    setLikeCounts(counts)
   }
 
   async function loadArticles() {
@@ -97,16 +111,14 @@ export default function ArticlesPage() {
       .order("updated_at", { ascending: false })
 
     if (postsError) {
-      throw new Error(
-        `Could not load articles: ${postsError.message}`
-      )
+      throw new Error(`Could not load articles: ${postsError.message}`)
     }
 
     const rows = data || []
-
     setArticles(rows)
 
-    await loadArticleViews(rows.map((row) => row.id))
+    const ids = rows.map((row) => row.id)
+    await Promise.all([loadArticleViews(ids), loadArticleLikes(ids)])
 
     if (!rows.length) {
       setCategoryByPost({})
@@ -128,27 +140,23 @@ export default function ArticlesPage() {
     }
 
     const lookup = {}
-
     for (const relation of relations || []) {
       if (!lookup[relation.post_id]) {
         lookup[relation.post_id] = []
       }
-
       lookup[relation.post_id].push(relation.category_id)
     }
-
     setCategoryByPost(lookup)
   }
-async function loadCategories() {
+
+  async function loadCategories() {
     const { data, error: categoriesError } = await supabase
       .from("categories")
       .select("id,name,slug,parent_id,description")
       .order("name", { ascending: true })
 
     if (categoriesError) {
-      throw new Error(
-        `Could not load categories: ${categoriesError.message}`
-      )
+      throw new Error(`Could not load categories: ${categoriesError.message}`)
     }
 
     setCategories(data || [])
@@ -160,7 +168,6 @@ async function loadCategories() {
 
     try {
       await loadAdmin()
-
       await Promise.all([loadArticles(), loadCategories()])
     } catch (err) {
       console.error(err)
@@ -248,7 +255,6 @@ async function loadCategories() {
 
   function getCategoryNames(articleId) {
     const ids = categoryByPost[articleId] || []
-
     return ids
       .map((id) => {
         const category = categories.find((item) => item.id === id)
@@ -259,6 +265,10 @@ async function loadCategories() {
 
   function getViewCount(articleId) {
     return viewCounts[articleId] || 0
+  }
+
+  function getLikeCount(articleId) {
+    return likeCounts[articleId] || 0
   }
 
   if (loading) {
@@ -289,12 +299,12 @@ async function loadCategories() {
       />
     )
   }
-return (
+
+  return (
     <main>
       <div className="row spread">
         <div>
           <h1 className="h1">Articles</h1>
-
           <p className="muted">Manage THE INDEX editorial content.</p>
         </div>
 
@@ -304,12 +314,7 @@ return (
       </div>
 
       {message && (
-        <div
-          className="card"
-          style={{
-            marginTop: "18px",
-          }}
-        >
+        <div className="card" style={{ marginTop: "18px" }}>
           {message}
         </div>
       )}
@@ -317,39 +322,26 @@ return (
       {error && (
         <div
           className="card"
-          style={{
-            marginTop: "18px",
-            color: "#b00020",
-          }}
+          style={{ marginTop: "18px", color: "#b00020" }}
         >
           {error}
         </div>
       )}
 
-      <div
-        className="card"
-        style={{
-          marginTop: "18px",
-        }}
-      >
+      <div className="card" style={{ marginTop: "18px" }}>
         {articles.length === 0 ? (
           <div>
             <h2 className="h2">No articles yet</h2>
-
             <p className="muted">
               Create your first article using the button above.
             </p>
           </div>
         ) : (
-          <div
-            style={{
-              display: "grid",
-              gap: "14px",
-            }}
-          >
+          <div style={{ display: "grid", gap: "14px" }}>
             {articles.map((article) => {
               const names = getCategoryNames(article.id)
               const views = getViewCount(article.id)
+              const likes = getLikeCount(article.id)
 
               return (
                 <article
@@ -404,6 +396,25 @@ return (
                           </span>
                         ))}
 
+                        {/* Views → opens analytics */}
+                        <Link
+                          href={"/articles/" + article.id + "/analytics"}
+                          style={{
+                            border: "1px solid #ddd",
+                            borderRadius: "999px",
+                            padding: "4px 10px",
+                            fontSize: "12px",
+                            fontWeight: 600,
+                            textDecoration: "none",
+                            color: "inherit",
+                            background: "#f8f8f8",
+                          }}
+                          title="Open article analytics"
+                        >
+                          👁️ {views} {views === 1 ? "view" : "views"}
+                        </Link>
+
+                        {/* Likes */}
                         <span
                           style={{
                             border: "1px solid #ddd",
@@ -413,7 +424,7 @@ return (
                             fontWeight: 600,
                           }}
                         >
-                          👁️ {views} {views === 1 ? "view" : "views"}
+                          ♥ {likes} {likes === 1 ? "like" : "likes"}
                         </span>
                       </div>
                     </div>
@@ -426,6 +437,14 @@ return (
                         justifyContent: "flex-end",
                       }}
                     >
+                      <Link
+                        href={"/articles/" + article.id + "/analytics"}
+                        className="btn"
+                        style={{ textDecoration: "none" }}
+                      >
+                        Analytics
+                      </Link>
+
                       <button
                         className="btn"
                         onClick={() => editArticle(article)}
