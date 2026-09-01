@@ -12,6 +12,7 @@ export default function ArticlesPage() {
   const [viewCounts, setViewCounts] = useState({})
   const [likeCounts, setLikeCounts] = useState({})
   const [admin, setAdmin] = useState(null)
+  const [siteUrl, setSiteUrl] = useState("https://theindexpublic.vercel.app")
 
   const [editingArticle, setEditingArticle] = useState(null)
   const [showEditor, setShowEditor] = useState(false)
@@ -54,6 +55,22 @@ export default function ArticlesPage() {
 
     setAdmin(currentAdmin)
     return currentAdmin
+  }
+
+  async function loadSiteUrl() {
+    try {
+      const { data: settingsRows } = await supabase
+        .from("site_settings")
+        .select("site_url")
+        .limit(1)
+
+      const url = settingsRows?.[0]?.site_url
+      if (url) {
+        setSiteUrl(String(url).replace(/\/+$/, ""))
+      }
+    } catch (err) {
+      console.warn("Could not load site URL:", err)
+    }
   }
 
   async function loadArticleViews(articleIds) {
@@ -168,7 +185,7 @@ export default function ArticlesPage() {
 
     try {
       await loadAdmin()
-      await Promise.all([loadArticles(), loadCategories()])
+      await Promise.all([loadArticles(), loadCategories(), loadSiteUrl()])
     } catch (err) {
       console.error(err)
       setError(err.message || "Could not load Articles.")
@@ -342,6 +359,7 @@ export default function ArticlesPage() {
               const names = getCategoryNames(article.id)
               const views = getViewCount(article.id)
               const likes = getLikeCount(article.id)
+              const publicUrl = siteUrl + "/article/" + article.slug
 
               return (
                 <article
@@ -396,7 +414,6 @@ export default function ArticlesPage() {
                           </span>
                         ))}
 
-                        {/* Views → opens analytics */}
                         <Link
                           href={"/articles/" + article.id + "/analytics"}
                           style={{
@@ -414,7 +431,6 @@ export default function ArticlesPage() {
                           👁️ {views} {views === 1 ? "view" : "views"}
                         </Link>
 
-                        {/* Likes */}
                         <span
                           style={{
                             border: "1px solid #ddd",
@@ -437,6 +453,16 @@ export default function ArticlesPage() {
                         justifyContent: "flex-end",
                       }}
                     >
+                      <a
+                        href={publicUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn"
+                        style={{ textDecoration: "none" }}
+                      >
+                        View
+                      </a>
+
                       <Link
                         href={"/articles/" + article.id + "/analytics"}
                         className="btn"
