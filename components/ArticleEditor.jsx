@@ -632,15 +632,53 @@ export default function ArticleEditor({
         }
       }
 
-      setMessage(
-        status === "PUBLISHED"
-          ? "Article published successfully."
-          : "Article saved successfully."
+      if (status === "PUBLISHED" && saved?.id) {
+  try {
+    const response = await fetch(
+      `/api/posts/${saved.id}/publish`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    )
+
+    const result = await response.json()
+
+    if (!response.ok || !result.success) {
+      console.error(
+        "PITNEX task creation failed:",
+        result
       )
 
-      if (onSaved) {
-        await onSaved(saved)
-      }
+      setMessage(
+        "Article published, but PITNEX task creation failed."
+      )
+    } else {
+      setMessage(
+        result.taskCreated
+          ? "Article published and PITNEX task created."
+          : "Article published. PITNEX task already exists."
+      )
+    }
+  } catch (taskError) {
+    console.error(
+      "PITNEX task connection failed:",
+      taskError
+    )
+
+    setMessage(
+      "Article published, but PITNEX task connection failed."
+    )
+  }
+} else {
+  setMessage("Article saved successfully.")
+}
+
+if (onSaved) {
+  await onSaved(saved)
+}
     } catch (err) {
       console.error(err)
 
