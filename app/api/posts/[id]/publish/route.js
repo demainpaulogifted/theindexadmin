@@ -1,8 +1,19 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
 
 const DEFAULT_REWARD_KOBO = 5000; // ₦50
 const DEFAULT_MAX_COMPLETIONS = 1000;
+
+function getServiceSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+}
 
 export async function POST(request, { params }) {
   try {
@@ -14,6 +25,8 @@ export async function POST(request, { params }) {
         { status: 400 }
       );
     }
+
+    const supabase = getServiceSupabase();
 
     // 1. Fetch article
     const { data: post, error: fetchError } = await supabase
@@ -29,7 +42,7 @@ export async function POST(request, { params }) {
       );
     }
 
-    // 2. Mark as published
+    // 2. Mark published
     const publishedAt = post.published_at || new Date().toISOString();
 
     const { data: updatedPost, error: updateError } = await supabase
@@ -44,26 +57,22 @@ export async function POST(request, { params }) {
 
     if (updateError) throw updateError;
 
-    // 3. Build article URL
+    // 3. Article URL
     const articleUrl = `https://theindex.name.ng/posts/${encodeURIComponent(
       updatedPost.slug
     )}`;
 
-    // 4. Check if task already exists (same Supabase project)
-    const { data: existingTasks, error: existingError } = await supabase
+    // 4. Already exists?
+    const { data: existing } = await supabase
       .from("pitnex_tasks")
       .select("id")
       .eq("article_url", articleUrl)
       .limit(1);
 
-    if (existingError) {
-      console.error("Existing task check failed:", existingError);
-    }
-
-    let taskId = existingTasks?.[0]?.id || null;
+    let taskId = existing?.[0]?.id || null;
     let taskCreated = false;
 
-    // 5. Create task if it does not exist
+    // 5. Create task if needed
     if (!taskId) {
       const { data: newTask, error: insertError } = await supabase
         .from("pitnex_tasks")
