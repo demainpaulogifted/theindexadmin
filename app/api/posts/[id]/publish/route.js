@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
-const PITNEX_URL =
-  process.env.PITNEX_URL || "https://pitnex.name.ng";
+const DEFAULT_REWARD_KOBO = 5000; // ₦50
+const DEFAULT_MAX_COMPLETIONS = 1000;
 
 export async function POST(request, { params }) {
   try {
@@ -15,9 +15,7 @@ export async function POST(request, { params }) {
       );
     }
 
-    // ─────────────────────────────────────────────
-    // 1. Fetch the article
-    // ─────────────────────────────────────────────
+    // 1. Fetch article
     const { data: post, error: fetchError } = await supabase
       .from("posts")
       .select("id, title, slug, excerpt, featured_image, published_at, status")
@@ -31,9 +29,7 @@ export async function POST(request, { params }) {
       );
     }
 
-    // ─────────────────────────────────────────────
     // 2. Mark as published
-    // ─────────────────────────────────────────────
     const publishedAt = post.published_at || new Date().toISOString();
 
     const { data: updatedPost, error: updateError } = await supabase
@@ -46,62 +42,69 @@ export async function POST(request, { params }) {
       .select("id, title, slug, excerpt, featured_image, published_at, status")
       .single();
 
-    if (updateError) {
-      throw updateError;
+    if (updateError) throw updateError;
+
+    // 3. Build article URL
+    const articleUrl = `https://theindex.name.ng/posts/${encodeURIComponent(
+      updatedPost.slug
+    )}`;
+
+    // 4. Check if task already exists (same Supabase project)
+    const { data: existingTasks, error: existingError } = await supabase
+      .from("pitnex_tasks")
+      .select("id")
+      .eq("article_url", articleUrl)
+      .limit(1);
+
+    if (existingError) {
+      console.error("Existing task check failed:", existingError);
     }
 
-    // ─────────────────────────────────────────────
-    // 3. Create Pitnex task
-    // ─────────────────────────────────────────────
-    let taskResult = null;
+    let taskId = existingTasks?.[0]?.id || null;
     let taskCreated = false;
-    let taskWarning = null;
 
-    try {
-      const taskResponse = await fetch(
-        `${PITNEX_URL}/api/tasks/theindex`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-pitnex-secret": process.env.PITNEX_TASK_SECRET || "",
-          },
-          body: JSON.stringify({
-            title: updatedPost.title,
-            slug: updatedPost.slug,
-            excerpt: updatedPost.excerpt || "",
-            featured_image: updatedPost.featured_image || "",
-            published_at: updatedPost.published_at,
-          }),
-        }
-      );
+    // 5. Create task if it does not exist
+    if (!taskId) {
+      const { data: newTask, error: insertError } = await supabase
+        .from("pitnex_tasks")
+        .insert({
+          type: "ARTICLE",
+          title: `Read: ${updatedPost.title}`,
+          instructions:
+            updatedPost.excerpt ||
+            `Read this article on THE INDEX: ${updatedPost.title}`,
+          article_url: articleUrl,
+          reward_kobo: DEFAULT_REWARD_KOBO,
+          max_completions: DEFAULT_MAX_COMPLETIONS,
+          starts_at: updatedPost.published_at || new Date().toISOString(),
+          is_active: true,
+        })
+        .select("id")
+        .single();
 
-      taskResult = await taskResponse.json();
+      if (insertError) {
+        console.error("PITNEX task insert failed:", insertError);
 
-      if (!taskResponse.ok) {
-        console.error("PITNEX task creation failed:", taskResult);
-        taskWarning =
-          taskResult?.error ||
-          "Article published, but the PITNEX task could not be created.";
-      } else {
-        taskCreated = Boolean(taskResult.created);
+        return NextResponse.json({
+          success: true,
+          published: true,
+          taskCreated: false,
+          warning:
+            "Article published, but the PITNEX task could not be created.",
+          errorDetail: insertError.message,
+        });
       }
-    } catch (err) {
-      console.error("PITNEX network error:", err);
-      taskWarning =
-        "Article published, but could not reach the PITNEX server.";
+
+      taskId = newTask.id;
+      taskCreated = true;
     }
 
-    // ─────────────────────────────────────────────
-    // 4. Response
-    // ─────────────────────────────────────────────
     return NextResponse.json({
       success: true,
       published: true,
       taskCreated,
-      taskId: taskResult?.taskId || null,
-      articleUrl: taskResult?.articleUrl || null,
-      warning: taskWarning,
+      taskId,
+      articleUrl,
     });
   } catch (error) {
     console.error("THE INDEX publish error:", error);
