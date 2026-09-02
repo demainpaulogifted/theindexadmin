@@ -2,8 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 
 const PITNEX_URL =
-  process.env.PITNEX_URL ||
-  "https://pitnex.name.ng";
+  process.env.PITNEX_URL || "https://pitnex.name.ng";
 
 export async function POST(request, { params }) {
   try {
@@ -11,109 +10,106 @@ export async function POST(request, { params }) {
 
     if (!id) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Post ID is required.",
-        },
+        { success: false, error: "Post ID is required." },
         { status: 400 }
       );
     }
 
-    const { data: post, error: fetchError } =
-      await supabase
-        .from("posts")
-        .select(
-          "id,title,slug,excerpt,featured_image,published_at,status"
-        )
-        .eq("id", id)
-        .single();
+    // ─────────────────────────────────────────────
+    // 1. Fetch the article
+    // ─────────────────────────────────────────────
+    const { data: post, error: fetchError } = await supabase
+      .from("posts")
+      .select("id, title, slug, excerpt, featured_image, published_at, status")
+      .eq("id", id)
+      .single();
 
     if (fetchError || !post) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "Article not found.",
-        },
+        { success: false, error: "Article not found." },
         { status: 404 }
       );
     }
 
-    const publishedAt =
-      post.published_at || new Date().toISOString();
+    // ─────────────────────────────────────────────
+    // 2. Mark as published
+    // ─────────────────────────────────────────────
+    const publishedAt = post.published_at || new Date().toISOString();
 
-    const { data: updatedPost, error: updateError } =
-      await supabase
-        .from("posts")
-        .update({
-          status: "PUBLISHED",
-          published_at: publishedAt,
-        })
-        .eq("id", id)
-        .select(
-          "id,title,slug,excerpt,featured_image,published_at,status"
-        )
-        .single();
+    const { data: updatedPost, error: updateError } = await supabase
+      .from("posts")
+      .update({
+        status: "PUBLISHED",
+        published_at: publishedAt,
+      })
+      .eq("id", id)
+      .select("id, title, slug, excerpt, featured_image, published_at, status")
+      .single();
 
     if (updateError) {
       throw updateError;
     }
 
-    const taskResponse = await fetch(
-      `${PITNEX_URL}/api/tasks/theindex`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: updatedPost.title,
-          slug: updatedPost.slug,
-          excerpt: updatedPost.excerpt,
-          featured_image:
-            updatedPost.featured_image,
-          published_at:
-            updatedPost.published_at,
-        }),
-      }
-    );
+    // ─────────────────────────────────────────────
+    // 3. Create Pitnex task
+    // ─────────────────────────────────────────────
+    let taskResult = null;
+    let taskCreated = false;
+    let taskWarning = null;
 
-    const taskResult = await taskResponse.json();
-
-    if (!taskResponse.ok) {
-      console.error(
-        "PITNEX task creation failed:",
-        taskResult
+    try {
+      const taskResponse = await fetch(
+        `${PITNEX_URL}/api/tasks/theindex`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "x-pitnex-secret": process.env.PITNEX_TASK_SECRET || "",
+          },
+          body: JSON.stringify({
+            title: updatedPost.title,
+            slug: updatedPost.slug,
+            excerpt: updatedPost.excerpt || "",
+            featured_image: updatedPost.featured_image || "",
+            published_at: updatedPost.published_at,
+          }),
+        }
       );
 
-      return NextResponse.json({
-        success: true,
-        published: true,
-        taskCreated: false,
-        warning:
-          "Article published, but the PITNEX task could not be created.",
-      });
+      taskResult = await taskResponse.json();
+
+      if (!taskResponse.ok) {
+        console.error("PITNEX task creation failed:", taskResult);
+        taskWarning =
+          taskResult?.error ||
+          "Article published, but the PITNEX task could not be created.";
+      } else {
+        taskCreated = Boolean(taskResult.created);
+      }
+    } catch (err) {
+      console.error("PITNEX network error:", err);
+      taskWarning =
+        "Article published, but could not reach the PITNEX server.";
     }
 
+    // ─────────────────────────────────────────────
+    // 4. Response
+    // ─────────────────────────────────────────────
     return NextResponse.json({
       success: true,
       published: true,
-      taskCreated: taskResult.created,
-      taskId: taskResult.taskId || null,
-      articleUrl:
-        taskResult.articleUrl || null,
+      taskCreated,
+      taskId: taskResult?.taskId || null,
+      articleUrl: taskResult?.articleUrl || null,
+      warning: taskWarning,
     });
   } catch (error) {
-    console.error(
-      "THE INDEX publish error:",
-      error
-    );
+    console.error("THE INDEX publish error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error:
-          error?.message ||
-          "Unable to publish article.",
+        error: error?.message || "Unable to publish article.",
       },
       { status: 500 }
     );
