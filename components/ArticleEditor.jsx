@@ -182,19 +182,19 @@ export default function ArticleEditor({
 
   async function uploadImage(file) {
     if (!file) return null
+
     if (!file.type.startsWith("image/")) {
       throw new Error("Please select an image file.")
     }
+
     const maxSize = 10 * 1024 * 1024
     if (file.size > maxSize) {
       throw new Error("Image must be 10MB or smaller.")
     }
 
-    const extension =
-      file.name.split(".").pop()?.toLowerCase() || "jpg"
-
-    const fileName = `\( {crypto.randomUUID()}. \){extension}`
-    const filePath = `articles/${fileName}`
+    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg"
+    const fileName = crypto.randomUUID() + "." + extension
+    const filePath = "articles/" + fileName
 
     const { error: uploadError } = await supabase.storage
       .from("article-images")
@@ -204,7 +204,7 @@ export default function ArticleEditor({
       })
 
     if (uploadError) {
-      throw new Error(`Image upload failed: ${uploadError.message}`)
+      throw new Error("Image upload failed: " + uploadError.message)
     }
 
     const { data } = supabase.storage
