@@ -285,7 +285,7 @@ export default function ArticleEditor({
     try {
       const url = await uploadImage(file)
       insertHtmlAtCursor(
-        `<p><img src="${url}" alt="" style="max-width:100%;height:auto;" /></p>`
+        '<p><img src="' + url + '" alt="" style="max-width:100%;height:auto;" /></p>'
       )
       setMessage("Image inserted into article content.")
     } catch (err) {
