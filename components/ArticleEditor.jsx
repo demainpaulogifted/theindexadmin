@@ -148,10 +148,6 @@ export default function ArticleEditor({
     })
   }
 
-  function readVisualContent() {
-    return contentRef.current?.innerHTML || ""
-  }
-
   function syncVisualToState() {
     if (!contentRef.current) return
     const html = contentRef.current.innerHTML
@@ -196,6 +192,7 @@ export default function ArticleEditor({
 
     const extension =
       file.name.split(".").pop()?.toLowerCase() || "jpg"
+
     const fileName = `\( {crypto.randomUUID()}. \){extension}`
     const filePath = `articles/${fileName}`
 
